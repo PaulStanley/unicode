@@ -11,3 +11,6 @@ roc run package/GraphemeTestGen.roc -- package/
 
 echo "Generating InternalEAW.roc"
 roc run package/InternalEAWGen.roc -- package/
+
+echo "Generating InternalComposition.roc"
+roc run package/InternalCompositionGen.roc -- package/

@@ -161,7 +161,7 @@ makeCompatibilityDecompositions = \data ->
     head =
         """
         # Return `Ok [<codepoints>]` if a codepoint can be compatibility
-        # decomposed, or `Err NoDecomp` if there is no canonical
+        # decomposed, or `Err NoDecomp` if there is no compatibility
         # decomposition for that codepoint.
         compatibleDecompositionInternal : CP -> Result (List CP) [NoDecomp]
         compatibleDecompositionInternal = \\cp ->

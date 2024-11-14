@@ -11,6 +11,7 @@ module [
     propertyMapFromFile,
     filterPropertyMap,
     metaToExpression,
+    parseHexPart,
 ]
 
 CPMeta : [Single U32, Range U32 U32]
@@ -128,6 +129,7 @@ propertyMapFromFile = \file, parsePropPart ->
     |> Str.split "\n"
     |> List.keepOks Helpers.startsWithHex
     |> List.map \l ->
+
         when Str.split l ";" is
             [hexPart, propPart] ->
                 when (parseHexPart hexPart, parsePropPart propPart) is

@@ -11,3 +11,5 @@ package/GraphemeTestGen
 package/InternalEmojiGen
 package/InternalEAWGen
 package/InternalUCDataGen
+
+api.md
