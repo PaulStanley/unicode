@@ -7,6 +7,7 @@ module [
     isHighSurrogate,
     isLowSurrogate,
     isValidScalar,
+    isSupplementary,
     parsePartialUtf8,
     appendUtf8,
     parseUtf8,
@@ -373,6 +374,11 @@ eastAsianWidthProperty = \cp ->
 visualWidth : CodePoint -> U32
 visualWidth = \cp ->
     cp |> toU32 |> InternalEAW.eastAsianWidth
+
+isSupplementary : CodePoint -> Bool
+isSupplementary = \cp ->
+    u32 = toU32 cp
+    u32 >= 0x100000 && u32 <= 0x10ffff
 
 expect
     # test toStr

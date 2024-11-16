@@ -4,7 +4,6 @@ import pf.File
 import pf.Arg
 import "data/DerivedNormalizationProps.txt" as data : Str
 import Helpers
-import pf.Stdout
 
 # We first pick out from the mass of properties in the file those we are
 # really interested in: just the Quick Check tables and the list of
@@ -84,7 +83,7 @@ makeCheckFunction = \parsed, label, fname ->
             """
             else if $(maybes) then
                     Maybe
-            else
+                    else
                     Yes
             """
 
@@ -143,5 +142,6 @@ template =
 
 main =
 
-
-    Stdout.line! "$(template)"
+when Arg.list! {} |> List.get 1 is
+    Err _ -> Task.err (InvalidArguments "USAGE: roc run InternalDerivedNormGen.roc -- path/to/package/")
+    Ok arg -> File.writeUtf8 "$(Helpers.removeTrailingSlash arg)/InternalDerivedNorm.roc" template
