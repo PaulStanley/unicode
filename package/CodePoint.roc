@@ -15,6 +15,7 @@ module [
     toStr,
     eastAsianWidthProperty,
     visualWidth,
+    fromU32Unsafe
 ]
 
 import InternalCP exposing [CP, fromU32Unchecked]
@@ -36,6 +37,16 @@ fromU32 = \u32 ->
         Ok (fromU32Unchecked u32)
     else
         Err InvalidCodePoint
+
+## Converts a [U32] to a [CodePoint] unsafely, with runtime crash if the codepoint is not a
+## valid [Unicode code point] (http://www.unicode.org/glossary/#code_point) (that is
+## between `0` and `0x10FFFF`).
+fromU32Unsafe : U32 -> CodePoint
+fromU32Unsafe = \u32 ->
+    if u32 <= 0x10ffff then
+        fromU32Unchecked u32
+    else
+        crash "Invalid unicode codepoint"
 
 ## Returns false if this is [isHighSurrogate] or [isLowSurrogate]
 isValidScalar : CodePoint -> Bool
@@ -350,6 +361,7 @@ cpsToStrHelp = \cps, bytes ->
             cpsToStrHelp
                 (List.dropFirst cps 1)
                 (CodePoint.appendUtf8 bytes cp)
+
 
 ## The East Asian Width property in Unicode categorizes characters based on
 ## their typical width and display behavior in East Asian typography, helping

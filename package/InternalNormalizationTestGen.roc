@@ -16,6 +16,7 @@ template =
     import pf.Stdout
     import pf.Utc
     import Normalization
+    import Helpers
 
     convertedU32 : U32 -> CodePoint
     convertedU32 = \\cp ->
@@ -27,7 +28,26 @@ template =
     converted = \\cps ->
         List.map cps convertedU32
 
-    $(tests)
+
+    #doTest : {nfc: List U32, nfd, nfkd, nfkc} -> Task {} *
+    doTest = \\{nfc, nfd: _nfd, nfkd: _nfkd, nfkc: _nfkc} ->
+        start = Utc.now! {}
+        result = Normalization.isNormalNFC (converted nfc)
+        stop = Utc.now! {}
+        time = Utc.deltaAsNanos start stop |> Num.toStr
+        if result == Yes then
+            Stdout.line "Test complete in \$(time)"
+        else
+            failed = List.map nfc Helpers.hexStrFromU32 |> Str.joinWith " "
+            Stdout.line "Test failed: \$(failed)"
+
+    tests = [$(tests)]
+
+    main =
+
+
+        Task.forEach tests doTest
+
 
     """
 
@@ -36,9 +56,7 @@ TestData : {nfc: List U32, nfd: List U32, nfkd: List U32, nfkc: List U32}
 makeNfcTest : TestData -> Str
 makeNfcTest = \data ->
     """
-
-        $(Inspect.toStr data)
-
+        $(Inspect.toStr data),
     """
 
 parseLine : Str -> Result TestData [Comment]
@@ -55,7 +73,19 @@ parseLine = \str ->
                 Ok {nfc, nfd, nfkd, nfkc}
             _ -> Err Comment
 
-tests = file |> Str.trim |> Str.split "\n" |> List.keepOks parseLine |> List.map makeNfcTest |> Str.joinWith "\n"
+take : List a, U64 -> List a
+take = \in, count ->
+    takeHelper in count []
+
+takeHelper : List a, U64, List a -> List a
+takeHelper =\in, count, out ->
+    when in is
+    [] -> out
+    _ if count <= 0 -> out
+    [first, .. as rest] -> takeHelper rest (count - 1) (List.append out first)
+
+
+tests = file |> Str.trim |> Str.split "\n" |> List.keepOks parseLine |> take 14_520 |> List.map makeNfcTest |> Str.joinWith "\n"
 
 main =
 

@@ -4,7 +4,7 @@ module [
     toU32,
 ]
 
-CP := U32 implements [Eq, Hash]
+CP := U32 implements [Eq, Hash, Inspect]
 
 toU32 : CP -> U32
 toU32 = \@CP u32 -> u32
