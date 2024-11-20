@@ -46,7 +46,7 @@ fromU32Unsafe = \u32 ->
     if u32 <= 0x10ffff then
         fromU32Unchecked u32
     else
-        crash "Invalid unicode codepoint"
+        crash "Invalid unicode codepoint: $(Num.toStr u32)"
 
 ## Returns false if this is [isHighSurrogate] or [isLowSurrogate]
 isValidScalar : CodePoint -> Bool

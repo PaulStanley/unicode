@@ -1,11 +1,14 @@
 module [
     isNormalNFC,
     showCodePoints,
+    toNFC,
+    toNFD,
 ]
 
 import CodePoint exposing [CodePoint]
-import InternalDerivedNorm exposing [quickCheckNFC, quickCheckNFD]
+import InternalDerivedNorm exposing [quickCheckNFC, quickCheckNFD, quickCheckNFKD]
 import InternalComposition
+import Helpers
 
 ## Normalization is a way of putting strings of unicode characters into
 ## a predictable form and order. There are various reasons to do that. The
@@ -39,8 +42,8 @@ import InternalComposition
 ## ordinary user. But it's worth understanding what the forms imply.
 ##
 ## NFD (which stands for "normalization form D", where "D" indicates that
-## characters tend to be _decomposed_) tends to break strings up into multiple parts:
-## so it would prefer to present "café" as
+## characters tend to be _decomposed_) tends to break strings up into multiple
+## parts. So it would prefer to present "café" as
 ##
 ##    "c", "a", "f", "e", "´"
 ##
@@ -102,14 +105,18 @@ import InternalComposition
 ##  * For _most_ text, use either NFC or NFD. It doesn't actually matter
 ##    but in practice NFC is _generally_ recommended (for example for the Web)
 ##
+##  * Use compatibility forms for text which needs to be searched semantically
+##    and don't expect to recover the original form of the text from them
+##
 ##  * Whichever you use, use it consistently.
 ##
 ##  * Don't forget, however, that string concatenation cannot be guaranteed to
-##    preserve normalization.
+##    preserve normalization. The various `concat` functions will perform
+##    safe concatenation on CodePoint lists.
 
 # This is used for testing only
 makeTest : List U32 -> List CodePoint
-makeTest = \u32s -> List.keepOks u32s CodePoint.fromU32
+makeTest = \u32s -> List.map u32s CodePoint.fromU32Unsafe
 
 CombiningClass : U8
 
@@ -117,15 +124,21 @@ cClass = InternalComposition.combiningClassInternal
 
 showCodePoints : List CodePoint -> List _
 showCodePoints = \cps ->
-    List.map cps \x ->
+    List.map cps \cp ->
         base =
-            if cClass x == 0 then [] else [' ']
-        asStr = CodePoint.appendUtf8 base x |> Str.fromUtf8
-        { codepoint: CodePoint.toU32 x, ccc: cClass x, string: asStr, nfc: quickCheckNFC x }
+            if cClass cp == 0 then [] else "◌" |> Str.toUtf8
+        asStr = CodePoint.appendUtf8 base cp |> Str.fromUtf8 |> Result.withDefault "�"
+        { codepoint: Helpers.hexStrFromU32 (CodePoint.toU32 cp), glyph: asStr}
 
-isNormalNFC : List CodePoint -> [Yes, No, Maybe]
+isNormalNFC : List CodePoint -> Bool
 isNormalNFC = \cps ->
-    isNormalHelp cps 0 Yes quickCheckNFC
+    when isNormalHelp cps 0 Yes quickCheckNFC is
+        Yes -> Bool.true
+        No -> Bool.false
+        Maybe ->
+            normalized = cps |> normalizeNFD |> composeCanonical |> List.map CodePoint.toU32
+            u32s = cps |> List.map CodePoint.toU32
+            normalized == u32s
 
 isNormalNFD : List CodePoint -> [Yes, No, Maybe]
 isNormalNFD = \cps ->
@@ -159,6 +172,29 @@ decomposeCanonical = \cp ->
 
             Err NoDecomp -> [cp]
 
+decomposeCanonicals : List CodePoint -> List CodePoint
+decomposeCanonicals = \cps ->
+    cps
+    |> List.map decomposeCanonical
+    |> List.join
+
+decomposeCompatible : CodePoint -> List CodePoint
+decomposeCompatible = \cp ->
+    if isHangulSyllable cp then
+        hangulDecompose cp
+    else
+        when InternalComposition.compatibleDecompositionInternal cp is
+            Ok decomp ->
+                List.map decomp (decomposeCompatible) |> List.join
+
+            Err NoDecomp -> [cp]
+
+decomposeCompatibles : List CodePoint -> List CodePoint
+decomposeCompatibles = \cps ->
+    cps
+    |> List.map decomposeCompatible
+    |> List.join
+
 sortCanonicalHelp : List CodePoint, List CodePoint, List CodePoint -> List CodePoint
 sortCanonicalHelp = \cps, working, acc ->
     when cps is
@@ -191,11 +227,11 @@ composeCanonical = \cps ->
         [_] -> cps
         [first, .. as rest] -> composeCanonicalHelp rest first [] []
 
-# TODO: HANGUL SYLLABLES
 composeCanonicalHelp : List CodePoint, CodePoint, List CodePoint, List CodePoint -> List CodePoint
 composeCanonicalHelp = \decomped, starter, working, composed ->
     when decomped is
         [] -> starterPlusCombiners composed starter working
+
         [first, .. as rest] if isStarter first ->
             composeCanonicalHelp rest first [] (starterPlusCombiners composed starter working)
 
@@ -211,34 +247,35 @@ composeCanonicalHelp = \decomped, starter, working, composed ->
 # and not a character in the Hangul V, T, or VT range
 isStarter : CodePoint -> Bool
 isStarter = \cp ->
-    cClass cp == 0 && (Bool.not (isHangulSyllable cp)) || isHangulVT cp
+    cClass cp == 0 && (Bool.not (isHangulSyllable cp || isHangulVT cp))
 
 # I drew heavily on https://github.com/dbuenzli/uunf/blob/master/src/uunf.ml for
 # this, so far as it is dealing with composing hangul characters
 cComposition : { starter : CodePoint, combiner : CodePoint } -> Result CodePoint [NoComp]
 cComposition = \{ starter, combiner } ->
-    if Bool.not (isHangulSyllable starter) then
+    if Bool.not (isHangulJamo starter) then
         shouldComposeCanonical { starter, combiner }
+
     else
         starter32 = CodePoint.toU32 starter
         combiner32 = CodePoint.toU32 combiner
+
         if starter32 <= 0x1112 then
             if combiner32 < hangulVBase || 0x1175 < combiner32 then
                 Err NoComp
             else
                 l = starter32 - hangulLBase
-                v = starter32 - hangulVBase
+                v = combiner32 - hangulVBase
                 r = hangulSBase + (l * hangulNCount) + (v * hangulTCount)
                 Ok (CodePoint.fromU32Unsafe r)
-        else if (starter32 - hangulSBase) % hangulTCount == 0 then
+
+        else
             if combiner32 <= hangulTBase || combiner32 > 0x11c3 then
                 Err NoComp
             else
                 r = starter32 + combiner32 - hangulTBase
                 Ok (CodePoint.fromU32Unsafe r)
-            else
 
-        shouldComposeCanonical { starter, combiner }
 
 starterPlusCombiners : List CodePoint, CodePoint, List CodePoint -> List CodePoint
 starterPlusCombiners = \done, starter, combiners ->
@@ -257,22 +294,70 @@ shouldComposeCanonical = \{ starter, combiner } ->
             else
                 Ok sub
 
+toNFC : List CodePoint -> List CodePoint
+toNFC = \cps ->
+    when isNormalHelp cps 0 Yes quickCheckNFC is
+        Yes -> cps
+        _ ->
+            cps
+            |> decomposeCanonicals
+            |> sortCanonical
+            |> composeCanonical
+
+toNFD : List CodePoint -> List CodePoint
+toNFD = \cps ->
+    when isNormalHelp cps 0 Yes quickCheckNFD is
+        Yes -> cps
+        _ ->
+            cps
+            |> decomposeCanonicals
+            |> sortCanonical
+
+toNFKD : List CodePoint -> List CodePoint
+toNFKD = \cps ->
+    when isNormalHelp cps 0 Yes quickCheckNFKD is
+        Yes -> cps
+        _ ->
+            cps
+            |> decomposeCompatibles
+            |> sortCanonical
+
 # Hangul syllables
 hangulSBase = 0xac00
 hangulLBase = 0x1100
 hangulVBase = 0x1161
 hangulTBase = 0x11a7
 hangulBlockEnd = 0xd7a3
-hangulLCount = 19
-hangulVCount = 21
+#hangulLCount = 19
+#hangulVCount = 21
 hangulTCount = 28
 hangulNCount = 588
-hangulSCount = 11172
+#hangulSCount = 11172
 
 isHangulSyllable : CodePoint -> Bool
 isHangulSyllable = \cp ->
     u32 = CodePoint.toU32 cp
-    u32 >= hangulSBase && u32 <= hangulBlockEnd
+    (u32 >= 0xac00 && u32 <= 0xd7af)
+    #|| (u32 >= 0x1100 && u32 <= 0x11ff)
+
+isHangulJamo : CodePoint -> Bool
+isHangulJamo = \cp ->
+    u32 = CodePoint.toU32 cp
+    if (u32 >= 0x1100 && u32 <= 0x11ff) then
+        Bool.true
+    else
+        isHangulJamoHelper u32
+
+isHangulJamoHelper : U32 -> Bool
+isHangulJamoHelper = \u32 ->
+    if u32 >= 0xac00 && u32 <= 0xd788 then
+        (u32 - 0xac00) % hangulTCount == 0
+    else
+        Bool.false
+
+expect
+    result = isHangulJamo (CodePoint.fromU32Unsafe 0x1111)
+    result == Bool.true
 
 isHangulVT : CodePoint -> Bool
 isHangulVT = \cp ->
@@ -282,101 +367,43 @@ isHangulVT = \cp ->
 hangulDecompose : CodePoint -> List CodePoint
 hangulDecompose = \cp ->
     sIndex = (CodePoint.toU32 cp) - hangulSBase
-
     lIndex = sIndex // hangulNCount
-
     vIndex = (lIndex % hangulNCount) // hangulTCount
-
     tIndex = sIndex % hangulTCount
-    dbg tIndex
 
     when (lIndex, vIndex, tIndex) is
-        (_, v, t) if v == 0 && t == 0 -> [cp]
         (_, _, t) if t == 0 ->
             [hangulLBase + lIndex, hangulVBase + vIndex] |> List.keepOks CodePoint.fromU32
 
-        (l, v, t) ->
+        (_l, _v, _t) ->
             [hangulLBase + lIndex, hangulVBase + vIndex, hangulTBase + tIndex] |> List.keepOks CodePoint.fromU32
 
 expect
-    start = CodePoint.fromU32Unsafe 0xd4db
-    dbg [start] |> showCodePoints
-
-    result = hangulDecompose start
-    dbg result |> showCodePoints
-
-    1 == 2
+    data = makeTest [0x02e4]
+    result = toNFC data
+    dbg showCodePoints result
+    Bool.false
 
 expect
-    start = [0x2126] |> makeTest
-    end = normalizeNFD start
-    dbg start |> showCodePoints
+    data = makeTest [0xfb01]
+    result = toNFKD data
+    dbg showCodePoints result
+    Bool.false
 
-    dbg end |> showCodePoints
 
-    valid = isNormalNFD end
-    valid == Yes
 
-expect
-    res = [0x00c5] |> makeTest |> List.map decomposeCanonical |> List.join |> showCodePoints
-    dbg res
-
-    1 == 1
-
-expect
-    valid = [0x00c5] |> makeTest |> isNormalNFC
-    valid == Yes
-
-expect
-    invalid = [0x2126] |> makeTest |> isNormalNFC
-    invalid == No
-
-expect
-    invalid = [0x0041, 0x030a] |> makeTest |> isNormalNFC
-    invalid == Maybe
-
-expect
-    valid = [0x0071, 0x0323, 0x0307] |> makeTest |> isNormalNFC
-    valid == Maybe # not sure if this is right
-
-expect
-    invalid = [0x0071, 0x0307, 0x0323] |> makeTest |> isNormalNFC
-    invalid == No
-
-expect
-    valid = [0x00c5] |> makeTest |> isNormalNFD
-    valid == No
-
-expect
-    invalid = [0x2126] |> makeTest |> isNormalNFD
-    invalid == No
-
-expect
-    invalid = [0x0041, 0x030a] |> makeTest |> isNormalNFD
-    invalid == Yes
-
-expect
-    valid = [0x0071, 0x0323, 0x0307] |> makeTest |> isNormalNFD
-    valid == Yes # not sure if this is right
-
-expect
-    invalid = [0x0071, 0x0307, 0x0323] |> makeTest |> isNormalNFD
-    invalid == No
-
-expect
-    valid = [0x1e0a, 0x0323] |> makeTest |> normalizeNFD |> isNormalNFC
-    dbg [0x1e0a, 0x0323] |> makeTest |> showCodePoints
-
-    valid == Yes
-
-expect
-    valid = [0x0073, 0x0323, 0x0307] |> makeTest |> normalizeNFD |> composeCanonical
-    dbg valid
-
-    1 == 1
-
-expect
-    valid = [] |> makeTest |> composeCanonical
-    dbg List.map valid isHangulSyllable
-
-    1 == 2
+#TODO:
+#
+# 1. I think I am sometimes NOT picking up cases where a "don't compose" flag should be
+#    set. Need to check that.
+#
+# 2. I think that I am not _recursing_ on decompositions, which is in practice most
+#    critical for compatibility decompositions.
+#
+# 3. On the plus side: I am actually PASSING most tests so I'm doing SOMETHING right.
+#
+# 4. Need to write concatenation functions.
+#
+# 5. Almost certainly need something that is *slyer* about identifying where text needs
+#    to be normalized, and only operates on the critical area. But that's going to take
+#    a lot of testing.

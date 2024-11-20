@@ -29,17 +29,19 @@ template =
         List.map cps convertedU32
 
 
-    #doTest : {nfc: List U32, nfd, nfkd, nfkc} -> Task {} *
-    doTest = \\{nfc, nfd: _nfd, nfkd: _nfkd, nfkc: _nfkc} ->
+    #doTest : (U64, {nfc: List U32, nfd: List U32, nfkd: List U32, nfkc: List U32}) -> Task {} *
+    doTest = \\(index, {source: source, nfc: _nfc, nfd: _nfd, nfkd: nfkd, nfkc: _nfkc}) ->
         start = Utc.now! {}
-        result = Normalization.isNormalNFC (converted nfc)
+        result = Normalization.toNFD (converted source)
         stop = Utc.now! {}
         time = Utc.deltaAsNanos start stop |> Num.toStr
-        if result == Yes then
-            Stdout.line "Test complete in \$(time)"
+        resultU32 = List.map result CodePoint.toU32
+        if resultU32 == nfkd then
+            Stdout.line "Test \$(Num.toStr index) complete in \$(time)"
         else
-            failed = List.map nfc Helpers.hexStrFromU32 |> Str.joinWith " "
-            Stdout.line "Test failed: \$(failed)"
+            intended = converted nfkd |> Normalization.showCodePoints |> Inspect.toStr
+            actual = result |> Normalization.showCodePoints |> Inspect.toStr
+            Stdout.line "Test failed: \$(Num.toStr index). Expected \$(intended). Got \$(actual)."
 
     tests = [$(tests)]
 
@@ -51,12 +53,12 @@ template =
 
     """
 
-TestData : {nfc: List U32, nfd: List U32, nfkd: List U32, nfkc: List U32}
+TestData : {source: List U32, nfc: List U32, nfd: List U32, nfkd: List U32, nfkc: List U32}
 
-makeNfcTest : TestData -> Str
-makeNfcTest = \data ->
+makeNfcTest : TestData, U64 -> Str
+makeNfcTest = \data, index ->
     """
-        $(Inspect.toStr data),
+        ($(Num.toStr (index + 44)), $(Inspect.toStr data)),
     """
 
 parseLine : Str -> Result TestData [Comment]
@@ -65,12 +67,13 @@ parseLine = \str ->
       Err _ -> Err Comment
       Ok s ->
         when Str.split s ";" is
-            [nfcStr, nfdStr, nfkcStr, nfkdStr, ..] ->
+            [sourceStr, nfcStr, nfdStr, nfkcStr, nfkdStr, ..] ->
+                source = Str.split sourceStr " " |> List.map Helpers.hexStrToU32
                 nfc = Str.split nfcStr " " |> List.map Helpers.hexStrToU32
                 nfd = Str.split nfdStr " " |> List.map Helpers.hexStrToU32
                 nfkc = Str.split nfkcStr " " |> List.map Helpers.hexStrToU32
                 nfkd = Str.split nfkdStr " " |> List.map Helpers.hexStrToU32
-                Ok {nfc, nfd, nfkd, nfkc}
+                Ok {source, nfc, nfd, nfkd, nfkc}
             _ -> Err Comment
 
 take : List a, U64 -> List a
@@ -85,7 +88,7 @@ takeHelper =\in, count, out ->
     [first, .. as rest] -> takeHelper rest (count - 1) (List.append out first)
 
 
-tests = file |> Str.trim |> Str.split "\n" |> List.keepOks parseLine |> take 14_520 |> List.map makeNfcTest |> Str.joinWith "\n"
+tests = file |> Str.trim |> Str.split "\n" |> List.keepOks parseLine |> take 1_000 |> List.mapWithIndex makeNfcTest |> Str.joinWith "\n"
 
 main =
 
