@@ -128,7 +128,7 @@ showCodePoints = \cps ->
         base =
             if cClass cp == 0 then [] else "◌" |> Str.toUtf8
         asStr = CodePoint.appendUtf8 base cp |> Str.fromUtf8 |> Result.withDefault "�"
-        { codepoint: Helpers.hexStrFromU32 (CodePoint.toU32 cp), glyph: asStr}
+        { codepoint: Helpers.hexStrFromU32 (CodePoint.toU32 cp), glyph: asStr }
 
 isNormalNFC : List CodePoint -> Bool
 isNormalNFC = \cps ->
@@ -231,7 +231,6 @@ composeCanonicalHelp : List CodePoint, CodePoint, List CodePoint, List CodePoint
 composeCanonicalHelp = \decomped, starter, working, composed ->
     when decomped is
         [] -> starterPlusCombiners composed starter working
-
         [first, .. as rest] if isStarter first ->
             composeCanonicalHelp rest first [] (starterPlusCombiners composed starter working)
 
@@ -255,7 +254,6 @@ cComposition : { starter : CodePoint, combiner : CodePoint } -> Result CodePoint
 cComposition = \{ starter, combiner } ->
     if Bool.not (isHangulJamo starter) then
         shouldComposeCanonical { starter, combiner }
-
     else
         starter32 = CodePoint.toU32 starter
         combiner32 = CodePoint.toU32 combiner
@@ -268,14 +266,12 @@ cComposition = \{ starter, combiner } ->
                 v = combiner32 - hangulVBase
                 r = hangulSBase + (l * hangulNCount) + (v * hangulTCount)
                 Ok (CodePoint.fromU32Unsafe r)
-
-        else
-            if combiner32 <= hangulTBase || combiner32 > 0x11c3 then
-                Err NoComp
+        else if combiner32 <= hangulTBase || combiner32 > 0x11c3 then
+            Err NoComp
             else
-                r = starter32 + combiner32 - hangulTBase
-                Ok (CodePoint.fromU32Unsafe r)
 
+        r = starter32 + combiner32 - hangulTBase
+        Ok (CodePoint.fromU32Unsafe r)
 
 starterPlusCombiners : List CodePoint, CodePoint, List CodePoint -> List CodePoint
 starterPlusCombiners = \done, starter, combiners ->
@@ -328,17 +324,17 @@ hangulLBase = 0x1100
 hangulVBase = 0x1161
 hangulTBase = 0x11a7
 hangulBlockEnd = 0xd7a3
-#hangulLCount = 19
-#hangulVCount = 21
+# hangulLCount = 19
+# hangulVCount = 21
 hangulTCount = 28
 hangulNCount = 588
-#hangulSCount = 11172
+# hangulSCount = 11172
 
 isHangulSyllable : CodePoint -> Bool
 isHangulSyllable = \cp ->
     u32 = CodePoint.toU32 cp
     (u32 >= 0xac00 && u32 <= 0xd7af)
-    #|| (u32 >= 0x1100 && u32 <= 0x11ff)
+# || (u32 >= 0x1100 && u32 <= 0x11ff)
 
 isHangulJamo : CodePoint -> Bool
 isHangulJamo = \cp ->
@@ -382,17 +378,17 @@ expect
     data = makeTest [0x02e4]
     result = toNFC data
     dbg showCodePoints result
+
     Bool.false
 
 expect
     data = makeTest [0xfb01]
     result = toNFKD data
     dbg showCodePoints result
+
     Bool.false
 
-
-
-#TODO:
+# TODO:
 #
 # 1. I think I am sometimes NOT picking up cases where a "don't compose" flag should be
 #    set. Need to check that.
