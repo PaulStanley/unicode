@@ -1,18 +1,22 @@
 module [
-    isNormalNFC,
     showCodePoints,
     toNFC,
     toNFD,
+    toNFKD,
 ]
 
 import CodePoint exposing [CodePoint]
-import InternalDerivedNorm exposing [quickCheckNFC, quickCheckNFD, quickCheckNFKD]
+import InternalDerivedNorm exposing [quickCheckNFC, quickCheckNFD, quickCheckNFKD, quickCheckNFKC]
 import InternalComposition
 import Helpers
 
-## Normalization is a way of putting strings of unicode characters into
+CombiningClass : U8
+
+cClass = InternalComposition.combiningClassInternal
+
+## Normalization puts strings of unicode characters into
 ## a predictable form and order. There are various reasons to do that. The
-## most common is to enable predictable comparison of two strings.
+## most common is to enable comparison of semantically equivalent strings.
 ##
 ## Here's the basic idea. Suppose you have the word "café". In unicode
 ## that could be written in different ways. At the risk of oversimplification
@@ -26,7 +30,8 @@ import Helpers
 ## A user searching for the word "café" in some text may provide the
 ## search term in either form, and the person who prepared the text may
 ## have encoded it in either form. If the two forms don't match, the
-## search will fail.
+## search will fail, although from a human point of view the printed
+## texts would seem identical.
 ##
 ## You get similar problems if a single character has multiple accents.
 ## It's perfectly OK to do this, but if one version puts the accents in
@@ -34,15 +39,15 @@ import Helpers
 ## appear to be different--even though they would look just the same when
 ## printed out.
 ##
-## Normalization guarantees that particular sequences will be presented
-## in a given way and a given order. There are four different ways this
+## Normalization aims to present "equivalent" sequences in a predictable
+## form and a given order. There are four different ways this
 ## can be done.
 ##
 ## The details _of the algorithms_ for doing this do not matter to the
 ## ordinary user. But it's worth understanding what the forms imply.
 ##
 ## NFD (which stands for "normalization form D", where "D" indicates that
-## characters tend to be _decomposed_) tends to break strings up into multiple
+## characters will be _decomposed_) breaks strings up into multiple
 ## parts. So it would prefer to present "café" as
 ##
 ##    "c", "a", "f", "e", "´"
@@ -63,19 +68,19 @@ import Helpers
 ## is a single "character", and it has a unicode codepoint `U+FB01`.
 ##
 ## NFC and NFD will leave this character unchanged: NFC will not combine "f" and "i"
-## in text so that it is "fi", and NFD will not break "fi" into "f" and "i". So far
+## in text so that it is [fi], and NFD will not break [fi] into "f" and "i". So far
 ## as _either_ of those forms is concerned "fi" ≠ "f" + "i". But for some purposes
-## we may want to do that. For instance, suppose we digitized a printed text
+## we may not want that. For instance, suppose we digitized a printed text
 ## which used "fi" ligatures, and kept them in the digitized version as `U+FBO1`.
-## We would probably want, if a user searched that text for "final" for "file",
-## the search to return a positive result. This is what the "compatibility"
+## If a user searched that text for "final" for "file", they would probably hope
+## the search would return a positive result. This is what the "compatibility"
 ## normalizations do: they try to "smooth over" typographic details of the text
 ## to correspond to some of the ways human beings think about printed words.
 ##
 ## NFKD (which stands for "normalization form KD" where K suggests "Kompatible" and
 ## D suggests "decomposition") breaks text down into constituent parts, including
-## not only accents but also doing things like breaking ligatures open, so "fi"
-## becomes "f" and "i". It does other things too. For instance:
+## doing things like breaking ligatures open, so "fi"
+## becomes "f" and "i". Some other examples:
 ##
 ## * Until around 1810, many texts used a special form of "s" (called long-s),
 ##   which looked a bit like an f without the crossbar. NFKD would treat that as an "s".
@@ -83,7 +88,7 @@ import Helpers
 ## * Text sometimes uses superscript numbers. NFKD would treat those just as
 ##   numbers.
 ##
-## Doing this, of course, strips out meaningful detail from the string: 2 followed
+## Doing this, of course,it  strips out meaningful detail from the string: 2 followed
 ## by a superscript 2 doesn't "mean" the same thing as 2 followed by a 2. But for
 ## some searching operations it is better to identify "false positives" rather than
 ## risk missing possibly interesting matches.
@@ -98,51 +103,99 @@ import Helpers
 ##
 ## but the "fi" ligature would not be restored
 ##
-##     fi, n, a, l [NKFD]-> f, i, n, a, l [NKFC] -> f, i, n, a, l
+##     <fi>, n, a, l [NKFD]-> f, i, n, a, l [NKFC] -> f, i, n, a, l
+##
 ##
 ## If you've read this far, you may be asking: well, what form should I use?
 ##
 ##  * For _most_ text, use either NFC or NFD. It doesn't actually matter
-##    but in practice NFC is _generally_ recommended (for example for the Web)
+##    but in practice NFC is _generally_ recommended (for example for the Web),
+##    because it is likely to produce slightly shorter strings and is
+##    "out of the box" compatible with Latin-1 encoding.
 ##
 ##  * Use compatibility forms for text which needs to be searched semantically
-##    and don't expect to recover the original form of the text from them
+##    and you don't need to recover the original form of the text from them.
 ##
 ##  * Whichever you use, use it consistently.
 ##
 ##  * Don't forget, however, that string concatenation cannot be guaranteed to
-##    preserve normalization. The various `concat` functions will perform
-##    safe concatenation on CodePoint lists.
+##    preserve normalization. You will need to normalize whenever you (a)
+##    accept any text that is not guaranteed to be in the normal form you
+##    require or (b) concatenate any strings.
+##
+##  Note: do not confuse normalization with internationalization. Normalization is
+##  about ensuring that particular sequences of glyphs will have a predictable
+##  representation in terms of codepoints. It does not deal with those aspects
+##  of text manipulation which are about things like uppercasing or collation.
 
 # This is used for testing only
 makeTest : List U32 -> List CodePoint
 makeTest = \u32s -> List.map u32s CodePoint.fromU32Unsafe
 
-CombiningClass : U8
-
-cClass = InternalComposition.combiningClassInternal
-
+# This is used for testing only
 showCodePoints : List CodePoint -> List _
 showCodePoints = \cps ->
     List.map cps \cp ->
         base =
             if cClass cp == 0 then [] else "◌" |> Str.toUtf8
         asStr = CodePoint.appendUtf8 base cp |> Str.fromUtf8 |> Result.withDefault "�"
-        { codepoint: Helpers.hexStrFromU32 (CodePoint.toU32 cp), glyph: asStr }
+        { codepoint: Helpers.hexStrFromU32 (CodePoint.toU32 cp), glyph: asStr, cc: cClass cp }
 
-isNormalNFC : List CodePoint -> Bool
-isNormalNFC = \cps ->
-    when isNormalHelp cps 0 Yes quickCheckNFC is
-        Yes -> Bool.true
-        No -> Bool.false
-        Maybe ->
-            normalized = cps |> normalizeNFD |> composeCanonical |> List.map CodePoint.toU32
-            u32s = cps |> List.map CodePoint.toU32
-            normalized == u32s
+# Magic numbers for hangul syllables
+hangulSBase = 0xac00
+hangulLBase = 0x1100
+hangulVBase = 0x1161
+hangulTBase = 0x11a7
+hangulJamoEnd = 0x11ff
+hangulBlockEnd = 0xd7a3
+hangulTCount = 28
+hangulNCount = 588
+hangulSEnd = 0xd7af
 
-isNormalNFD : List CodePoint -> [Yes, No, Maybe]
-isNormalNFD = \cps ->
-    isNormalHelp cps 0 Yes quickCheckNFD
+# This identifies the hangul _composed_ syllables, which are in a block from
+# U+AC00 and U+D7AF
+isHangulSyllable : CodePoint -> Bool
+isHangulSyllable = \cp ->
+    u32 = CodePoint.toU32 cp
+    (u32 >= hangulSBase && u32 <= hangulSEnd)
+
+# The trick here is that we are interested in identifying potential
+# starters -- either L, V, T or LV. These are found either in the Hangul
+# Jamo block U+1100 _or_ of combined LV forms in the Hangul syllable
+# block, which may combine with a T Jamo
+isHangulStarter : CodePoint -> Bool
+isHangulStarter = \cp ->
+    u32 = CodePoint.toU32 cp
+    if (u32 >= hangulLBase && u32 <= hangulJamoEnd) then
+        Bool.true
+    else
+        isHangulLV u32
+
+isHangulLV : U32 -> Bool
+isHangulLV = \u32 ->
+    # I am not sure why this is U+D788 ... but that seems to be the
+    # number required for this to work properly
+    if u32 >= hangulSBase && u32 <= 0xd788 then
+        (u32 - hangulSBase) % hangulTCount == 0
+    else
+        Bool.false
+
+expect
+    result = isHangulStarter (CodePoint.fromU32Unsafe 0x1111)
+    result == Bool.true
+
+# A codepoint which might have composable characters after it: combining class 0
+# and not a character in the Hangul LV and LVT range
+isStarter : CodePoint -> Bool
+isStarter = \cp ->
+    cClass cp == 0 && !(isHangulSyllable cp)
+
+# Quickcheck. Check a list of codepoints using the quick check tables
+# which return Yes, No, or Maybe. If everything is "Yes" the list is
+# already in normal form.
+isNormal : (CodePoint -> [Yes, No, Maybe]), List CodePoint -> [Yes, No, Maybe]
+isNormal = \checkerFun, cps ->
+    isNormalHelp cps 0 Yes checkerFun
 
 isNormalHelp : List CodePoint, CombiningClass, [Yes, No, Maybe], (CodePoint -> [Yes, No, Maybe]) -> [Yes, No, Maybe]
 isNormalHelp = \cps, lastCc, status, checker ->
@@ -183,17 +236,26 @@ decomposeCompatible = \cp ->
     if isHangulSyllable cp then
         hangulDecompose cp
     else
-        when InternalComposition.compatibleDecompositionInternal cp is
-            Ok decomp ->
-                List.map decomp (decomposeCompatible) |> List.join
+        when InternalComposition.canonicalDecompositionInternal cp is
+            Ok decomp1 ->
+                List.map decomp1 (decomposeCompatible) |> List.join
 
-            Err NoDecomp -> [cp]
+            Err NoDecomp ->
+                when InternalComposition.compatibleDecompositionInternal cp is
+                    Ok decomp2 ->
+                        List.map decomp2 (decomposeCompatible) |> List.join
+
+                    Err NoDecomp -> [cp]
 
 decomposeCompatibles : List CodePoint -> List CodePoint
 decomposeCompatibles = \cps ->
     cps
     |> List.map decomposeCompatible
     |> List.join
+
+sortCanonical : List CodePoint -> List CodePoint
+sortCanonical = \cps ->
+    sortCanonicalHelp cps [] []
 
 sortCanonicalHelp : List CodePoint, List CodePoint, List CodePoint -> List CodePoint
 sortCanonicalHelp = \cps, working, acc ->
@@ -212,10 +274,6 @@ sortAndJoin : List CodePoint, List CodePoint -> List CodePoint
 sortAndJoin = \cps, acc ->
     List.concat acc (List.sortWith cps \a, b -> Num.compare (cClass a) (cClass b))
 
-sortCanonical : List CodePoint -> List CodePoint
-sortCanonical = \cps ->
-    sortCanonicalHelp cps [] []
-
 normalizeNFD : List CodePoint -> List CodePoint
 normalizeNFD = \cps ->
     List.map cps decomposeCanonical |> List.join |> sortCanonical
@@ -231,43 +289,47 @@ composeCanonicalHelp : List CodePoint, CodePoint, List CodePoint, List CodePoint
 composeCanonicalHelp = \decomped, starter, working, composed ->
     when decomped is
         [] -> starterPlusCombiners composed starter working
-        [first, .. as rest] if isStarter first ->
-            composeCanonicalHelp rest first [] (starterPlusCombiners composed starter working)
-
         [first, .. as rest] ->
             when cComposition { starter, combiner: first } is
                 Err NoComp ->
-                    composeCanonicalHelp rest starter (List.append working first) composed
+                    if isStarter first then
+                        composeCanonicalHelp rest first [] (starterPlusCombiners composed starter working)
+                    else
+                        composeCanonicalHelp rest starter (List.append working first) composed
+
+                Err JamoNoComp ->
+                    composeCanonicalHelp rest first [] (starterPlusCombiners composed starter working)
 
                 Ok sub ->
                     composeCanonicalHelp rest sub working composed
 
-# a character which might have composable characters after it: combining class 0
-# and not a character in the Hangul V, T, or VT range
-isStarter : CodePoint -> Bool
-isStarter = \cp ->
-    cClass cp == 0 && (Bool.not (isHangulSyllable cp || isHangulVT cp))
+        [first, .. as rest] if isStarter first ->
+            composeCanonicalHelp rest first [] (starterPlusCombiners composed starter working)
 
 # I drew heavily on https://github.com/dbuenzli/uunf/blob/master/src/uunf.ml for
 # this, so far as it is dealing with composing hangul characters
-cComposition : { starter : CodePoint, combiner : CodePoint } -> Result CodePoint [NoComp]
+cComposition : { starter : CodePoint, combiner : CodePoint } -> Result CodePoint [NoComp, JamoNoComp]
 cComposition = \{ starter, combiner } ->
-    if Bool.not (isHangulJamo starter) then
+    # We deal first with the standard case, where we have to lookup in the combination
+    # tables generated from unicode data.
+    if Bool.not (isHangulStarter starter) then
         shouldComposeCanonical { starter, combiner }
+        # The rest is dealing with Hangul syllables
     else
         starter32 = CodePoint.toU32 starter
         combiner32 = CodePoint.toU32 combiner
-
+        # This deals with LV combinations
         if starter32 <= 0x1112 then
             if combiner32 < hangulVBase || 0x1175 < combiner32 then
-                Err NoComp
+                Err JamoNoComp
             else
                 l = starter32 - hangulLBase
                 v = combiner32 - hangulVBase
                 r = hangulSBase + (l * hangulNCount) + (v * hangulTCount)
                 Ok (CodePoint.fromU32Unsafe r)
+            # And this then deals with LVT combinations
         else if combiner32 <= hangulTBase || combiner32 > 0x11c3 then
-            Err NoComp
+            Err JamoNoComp
             else
 
         r = starter32 + combiner32 - hangulTBase
@@ -283,16 +345,30 @@ shouldComposeCanonical = \{ starter, combiner } ->
         Err NoComp -> Err NoComp
         Ok sub ->
             if
-                InternalDerivedNorm.fullCompositionExclusion starter
-                || InternalDerivedNorm.fullCompositionExclusion combiner
+                InternalDerivedNorm.fullCompositionExclusion sub
             then
                 Err NoComp
             else
                 Ok sub
 
+strToNfc : Str -> Result Str [Utf8ParseError, BadUtf8]
+strToNfc = \str ->
+    when str |> Str.toUtf8 |> CodePoint.parseUtf8 is
+        Ok cps -> toNFD cps |> CodePoint.toStr
+        Err _ -> Err Utf8ParseError
+
+expect
+    str = "Café society"
+    res = strToNfc str |> Result.withDefault ""
+    dbg Str.toUtf8 str
+
+    dbg Str.toUtf8 res
+
+    str == res
+
 toNFC : List CodePoint -> List CodePoint
 toNFC = \cps ->
-    when isNormalHelp cps 0 Yes quickCheckNFC is
+    when isNormal quickCheckNFC cps is
         Yes -> cps
         _ ->
             cps
@@ -302,7 +378,7 @@ toNFC = \cps ->
 
 toNFD : List CodePoint -> List CodePoint
 toNFD = \cps ->
-    when isNormalHelp cps 0 Yes quickCheckNFD is
+    when isNormal quickCheckNFD cps is
         Yes -> cps
         _ ->
             cps
@@ -311,95 +387,62 @@ toNFD = \cps ->
 
 toNFKD : List CodePoint -> List CodePoint
 toNFKD = \cps ->
-    when isNormalHelp cps 0 Yes quickCheckNFKD is
+    when isNormal quickCheckNFKD cps is
         Yes -> cps
         _ ->
             cps
             |> decomposeCompatibles
             |> sortCanonical
 
-# Hangul syllables
-hangulSBase = 0xac00
-hangulLBase = 0x1100
-hangulVBase = 0x1161
-hangulTBase = 0x11a7
-hangulBlockEnd = 0xd7a3
-# hangulLCount = 19
-# hangulVCount = 21
-hangulTCount = 28
-hangulNCount = 588
-# hangulSCount = 11172
-
-isHangulSyllable : CodePoint -> Bool
-isHangulSyllable = \cp ->
-    u32 = CodePoint.toU32 cp
-    (u32 >= 0xac00 && u32 <= 0xd7af)
-# || (u32 >= 0x1100 && u32 <= 0x11ff)
-
-isHangulJamo : CodePoint -> Bool
-isHangulJamo = \cp ->
-    u32 = CodePoint.toU32 cp
-    if (u32 >= 0x1100 && u32 <= 0x11ff) then
-        Bool.true
-    else
-        isHangulJamoHelper u32
-
-isHangulJamoHelper : U32 -> Bool
-isHangulJamoHelper = \u32 ->
-    if u32 >= 0xac00 && u32 <= 0xd788 then
-        (u32 - 0xac00) % hangulTCount == 0
-    else
-        Bool.false
-
-expect
-    result = isHangulJamo (CodePoint.fromU32Unsafe 0x1111)
-    result == Bool.true
-
-isHangulVT : CodePoint -> Bool
-isHangulVT = \cp ->
-    u32 = CodePoint.toU32 cp
-    u32 >= hangulVBase && u32 <= hangulBlockEnd
+toNFKC : List CodePoint -> List CodePoint
+toNFKC = \cps ->
+    when isNormal quickCheckNFKC cps is
+        Yes -> cps
+        _ ->
+            cps
+            |> decomposeCompatibles
+            |> sortCanonical
+            |> composeCanonical
 
 hangulDecompose : CodePoint -> List CodePoint
 hangulDecompose = \cp ->
     sIndex = (CodePoint.toU32 cp) - hangulSBase
     lIndex = sIndex // hangulNCount
-    vIndex = (lIndex % hangulNCount) // hangulTCount
+    vIndex = (sIndex % hangulNCount) // hangulTCount
     tIndex = sIndex % hangulTCount
 
     when (lIndex, vIndex, tIndex) is
         (_, _, t) if t == 0 ->
+            dbg "LV"
+
             [hangulLBase + lIndex, hangulVBase + vIndex] |> List.keepOks CodePoint.fromU32
 
         (_l, _v, _t) ->
+            dbg "LVT"
+
             [hangulLBase + lIndex, hangulVBase + vIndex, hangulTBase + tIndex] |> List.keepOks CodePoint.fromU32
 
 expect
-    data = makeTest [0x02e4]
-    result = toNFC data
-    dbg showCodePoints result
+    source = makeTest [0x3304, 0x0334]
+    nfkd = toNFKD source
+    dbg showCodePoints source
+
+    dbg showCodePoints nfkd
 
     Bool.false
 
 expect
-    data = makeTest [0xfb01]
-    result = toNFKD data
-    dbg showCodePoints result
+    source = makeTest [0x30a4, 0x30cb, 0x30f3, 0x30b0, 0x0334]
+    nfd = toNFD source
+    nfc = toNFC nfd
+    dbg isStarter (CodePoint.fromU32Unsafe 0x30b0)
+
+    dbg cClass (CodePoint.fromU32Unsafe 0x30b0)
+
+    dbg showCodePoints source
+
+    dbg showCodePoints nfd
+
+    dbg showCodePoints nfc
 
     Bool.false
-
-# TODO:
-#
-# 1. I think I am sometimes NOT picking up cases where a "don't compose" flag should be
-#    set. Need to check that.
-#
-# 2. I think that I am not _recursing_ on decompositions, which is in practice most
-#    critical for compatibility decompositions.
-#
-# 3. On the plus side: I am actually PASSING most tests so I'm doing SOMETHING right.
-#
-# 4. Need to write concatenation functions.
-#
-# 5. Almost certainly need something that is *slyer* about identifying where text needs
-#    to be normalized, and only operates on the critical area. But that's going to take
-#    a lot of testing.

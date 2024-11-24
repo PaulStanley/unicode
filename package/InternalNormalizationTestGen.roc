@@ -28,20 +28,83 @@ template =
     converted = \\cps ->
         List.map cps convertedU32
 
+    equalCodePoints : List CodePoint, List CodePoint -> Bool
+    equalCodePoints = \\cp1, cp2 ->
+        when (cp1, cp2) is
+        ([], []) -> Bool.true
+        ([h1, .. as t1], [h2, .. as t2]) if (CodePoint.toU32 h1) == (CodePoint.toU32 h2) ->
+            equalCodePoints t1 t2
+        _ -> Bool.false
 
     #doTest : (U64, {nfc: List U32, nfd: List U32, nfkd: List U32, nfkc: List U32}) -> Task {} *
-    doTest = \\(index, {source: source, nfc: _nfc, nfd: _nfd, nfkd: nfkd, nfkc: _nfkc}) ->
+    doTest = \\(index, {source: sourceR, nfc: nfcR, nfd: nfdR, nfkd: nfkdR, nfkc: nfkcR}) ->
+        nfc = converted nfcR
+        nfd = converted nfdR
+        nfkd = converted nfkdR
+        nfkc = converted nfkcR
+        source = converted sourceR
+
         start = Utc.now! {}
-        result = Normalization.toNFD (converted source)
+        nfc1 = Normalization.toNFC source
+        nfc2 = Normalization.toNFC nfc
+        nfc3 = Normalization.toNFC nfd
+        nfc4 = Normalization.toNFC nfkd
+        nfc5 = Normalization.toNFC nfkc
+
+        nfd1 = Normalization.toNFD source
+        nfd2 = Normalization.toNFD nfc
+        nfd3 = Normalization.toNFD nfd
+        nfd4 = Normalization.toNFD nfkd
+        nfd5 = Normalization.toNFD nfkc
         stop = Utc.now! {}
+        nfcResult =
+            equalCodePoints nfc1 nfc &&
+            equalCodePoints nfc2 nfc &&
+            equalCodePoints nfc3 nfc &&
+            equalCodePoints nfc4 nfkc &&
+            equalCodePoints nfc5 nfkc
+
+        nfdResult =
+            equalCodePoints nfd1 nfd &&
+            equalCodePoints nfd2 nfd &&
+            equalCodePoints nfd3 nfd &&
+            equalCodePoints nfd4 nfkd &&
+            equalCodePoints nfd5 nfkd
         time = Utc.deltaAsNanos start stop |> Num.toStr
-        resultU32 = List.map result CodePoint.toU32
-        if resultU32 == nfkd then
+        if nfcResult && nfdResult then
             Stdout.line "Test \$(Num.toStr index) complete in \$(time)"
         else
-            intended = converted nfkd |> Normalization.showCodePoints |> Inspect.toStr
-            actual = result |> Normalization.showCodePoints |> Inspect.toStr
-            Stdout.line "Test failed: \$(Num.toStr index). Expected \$(intended). Got \$(actual)."
+            sourceStr = Normalization.showCodePoints source |> Inspect.toStr
+            nfcStr = Normalization.showCodePoints nfc |> Inspect.toStr
+            nfc1Str = Normalization.showCodePoints nfc1 |> Inspect.toStr
+            nfc2Str = Normalization.showCodePoints nfc2 |> Inspect.toStr
+            nfc3Str = Normalization.showCodePoints nfc3 |> Inspect.toStr
+            nfc4Str = Normalization.showCodePoints nfc4 |> Inspect.toStr
+            nfkcStr = Normalization.showCodePoints nfkc |> Inspect.toStr
+            nfc5Str = Normalization.showCodePoints nfc5 |> Inspect.toStr
+
+            nfdStr = Normalization.showCodePoints nfd |> Inspect.toStr
+            nfd1Str = Normalization.showCodePoints nfd1 |> Inspect.toStr
+            nfd2Str = Normalization.showCodePoints nfd2 |> Inspect.toStr
+            nfd3Str = Normalization.showCodePoints nfd3 |> Inspect.toStr
+            nfd4Str = Normalization.showCodePoints nfd4 |> Inspect.toStr
+            nfkdStr = Normalization.showCodePoints nfkd |> Inspect.toStr
+            nfd5Str = Normalization.showCodePoints nfd5 |> Inspect.toStr
+
+            nfcResultStr =
+                if nfcResult then
+                    "NFC test passed."
+                else
+                    "NFC test failed.\\nSource     : \$(sourceStr)\\nNFC        : \$(nfcStr)\\nSource->NFC: \$(nfc1Str)\\nNFC->NFC   : \$(nfc2Str)\\nNFD->NFC   : \$(nfc3Str)\\nNFKC       : \$(nfkcStr)\\nNFKC->NFC  : \$(nfc4Str)\\nNFKD->NFC  : \$(nfc5Str)\\n"
+
+            nfdResultStr =
+                if nfdResult then
+                    "NFD test passed"
+                else
+                    "NFD test failed.\\nSource     : \$(sourceStr)\\nNFC        : \$(nfdStr)\\nSource->NFD: \$(nfd1Str)\\nNFC->NFD   : \$(nfd2Str)\\nNFD->NFD   : \$(nfd3Str)\\nNFKD       : \$(nfkdStr)\\nNFKD->NFD  : \$(nfd4Str)\\nNFKC->NFD  : \$(nfd5Str)\\n"
+
+            Stdout.line! "=== Test \$(Num.toStr index) failed.\\n\$(nfcResultStr)\\n\$(nfdResultStr)"
+
 
     tests = [$(tests)]
 
@@ -88,7 +151,7 @@ takeHelper =\in, count, out ->
     [first, .. as rest] -> takeHelper rest (count - 1) (List.append out first)
 
 
-tests = file |> Str.trim |> Str.split "\n" |> List.keepOks parseLine |> take 1_000 |> List.mapWithIndex makeNfcTest |> Str.joinWith "\n"
+tests = file |> Str.trim |> Str.split "\n" |> List.keepOks parseLine |> take 7000 |> List.mapWithIndex makeNfcTest |> Str.joinWith "\n"
 
 main =
 
