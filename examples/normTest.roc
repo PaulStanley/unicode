@@ -4,14 +4,19 @@ app [main] {
 }
 
 import unicode.Normalization
-import unicode.CodePoint
 import pf.Stdout
 
 main =
 
-    result =
-        "hello´j..." |> Str.toUtf8 |> CodePoint.parseUtf8 |> Result.withDefault [] |> Normalization.isNormalNFC
+    raw = "Café"
+    asNFD = Normalization.normalize NFD raw
+    asNFC = Normalization.normalize NFC raw
 
-    dbg result
+    declaration =
+        if asNFD == asNFC then
+            "'$(asNFD)' and '$(asNFC)' look the same ... but they shouldn't be."
+        else
+            "'$(asNFD)' and '$(asNFC)' may look the same, but they're not."
 
-    Stdout.line! "Hello"
+
+    Stdout.line! declaration
