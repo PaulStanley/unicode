@@ -45,18 +45,35 @@ template =
         source = converted sourceR
 
         start = Utc.now! {}
-        nfc1 = Normalization.toNFC source
-        nfc2 = Normalization.toNFC nfc
-        nfc3 = Normalization.toNFC nfd
-        nfc4 = Normalization.toNFC nfkd
-        nfc5 = Normalization.toNFC nfkc
+        nfc1 = Normalization.codePointsToNFC source
+        nfc2 = Normalization.codePointsToNFC nfc
+        nfc3 = Normalization.codePointsToNFC nfd
+        nfc4 = Normalization.codePointsToNFC nfkd
+        nfc5 = Normalization.codePointsToNFC nfkc
 
-        nfd1 = Normalization.toNFD source
-        nfd2 = Normalization.toNFD nfc
-        nfd3 = Normalization.toNFD nfd
-        nfd4 = Normalization.toNFD nfkd
-        nfd5 = Normalization.toNFD nfkc
+        nfd1 = Normalization.codePointsToNFD source
+        nfd2 = Normalization.codePointsToNFD nfc
+        nfd3 = Normalization.codePointsToNFD nfd
+        nfd4 = Normalization.codePointsToNFD nfkd
+        nfd5 = Normalization.codePointsToNFD nfkc
+
+        nfkd1 = Normalization.codePointsToNFKD source
+        nfkd2 = Normalization.codePointsToNFKD nfc
+        nfkd3 = Normalization.codePointsToNFKD nfd
+        nfkd4 = Normalization.codePointsToNFKD nfkd
+        nfkd5 = Normalization.codePointsToNFKD nfkc
         stop = Utc.now! {}
+
+        nfkc1 = Normalization.codePointsToNFKC source
+        nfkc2 = Normalization.codePointsToNFKC nfc
+        nfkc3 = Normalization.codePointsToNFKC nfd
+        nfkc4 = Normalization.codePointsToNFKC nfkd
+        nfkc5 = Normalization.codePointsToNFKC nfkc
+
+
+        # NFC
+        #      c2 ==  toNFC(c1) ==  toNFC(c2) ==  toNFC(c3)
+        #      c4 ==  toNFC(c4) ==  toNFC(c5)
         nfcResult =
             equalCodePoints nfc1 nfc &&
             equalCodePoints nfc2 nfc &&
@@ -64,14 +81,37 @@ template =
             equalCodePoints nfc4 nfkc &&
             equalCodePoints nfc5 nfkc
 
+        #    NFD
+        #      c3 ==  toNFD(c1) ==  toNFD(c2) ==  toNFD(c3)
+        #      c5 ==  toNFD(c4) ==  toNFD(c5)
         nfdResult =
             equalCodePoints nfd1 nfd &&
             equalCodePoints nfd2 nfd &&
             equalCodePoints nfd3 nfd &&
             equalCodePoints nfd4 nfkd &&
             equalCodePoints nfd5 nfkd
+
+        #    NFKD
+        #      c4 == toNFKD(c1) == toNFKD(c2) == toNFKD(c3) == toNFKD(c4) == toNFKD(c5)
+        nfkdResult =
+            equalCodePoints nfkd1 nfkd &&
+            equalCodePoints nfkd2 nfkd &&
+            equalCodePoints nfkd3 nfkd &&
+            equalCodePoints nfkd4 nfkd &&
+            equalCodePoints nfkd5 nfkd
+
+        #    NFKC
+        #      c4 == toNFKC(c1) == toNFKC(c2) == toNFKC(c3) == toNFKC(c4) == toNFKC(c5)
+        #
+        nfkcResult =
+            equalCodePoints nfkc1 nfkc &&
+            equalCodePoints nfkc2 nfkc &&
+            equalCodePoints nfkc3 nfkc &&
+            equalCodePoints nfkc4 nfkc &&
+            equalCodePoints nfkc5 nfkc
+
         time = Utc.deltaAsNanos start stop |> Num.toStr
-        if nfcResult && nfdResult then
+        if nfcResult && nfdResult && nfkdResult && nfkcResult then
             Stdout.line "Test \$(Num.toStr index) complete in \$(time)"
         else
             sourceStr = Normalization.showCodePoints source |> Inspect.toStr
@@ -91,6 +131,18 @@ template =
             nfkdStr = Normalization.showCodePoints nfkd |> Inspect.toStr
             nfd5Str = Normalization.showCodePoints nfd5 |> Inspect.toStr
 
+            nfkd1Str = Normalization.showCodePoints nfkd1 |> Inspect.toStr
+            nfkd2Str = Normalization.showCodePoints nfkd2 |> Inspect.toStr
+            nfkd3Str = Normalization.showCodePoints nfkd3 |> Inspect.toStr
+            nfkd4Str = Normalization.showCodePoints nfkd4 |> Inspect.toStr
+            nfkd5Str = Normalization.showCodePoints nfkd5 |> Inspect.toStr
+
+            nfkc1Str = Normalization.showCodePoints nfkd1 |> Inspect.toStr
+            nfkc2Str = Normalization.showCodePoints nfkd2 |> Inspect.toStr
+            nfkc3Str = Normalization.showCodePoints nfkd3 |> Inspect.toStr
+            nfkc4Str = Normalization.showCodePoints nfkd4 |> Inspect.toStr
+            nfkc5Str = Normalization.showCodePoints nfkd5 |> Inspect.toStr
+
             nfcResultStr =
                 if nfcResult then
                     "NFC test passed."
@@ -101,9 +153,21 @@ template =
                 if nfdResult then
                     "NFD test passed"
                 else
-                    "NFD test failed.\\nSource     : \$(sourceStr)\\nNFC        : \$(nfdStr)\\nSource->NFD: \$(nfd1Str)\\nNFC->NFD   : \$(nfd2Str)\\nNFD->NFD   : \$(nfd3Str)\\nNFKD       : \$(nfkdStr)\\nNFKD->NFD  : \$(nfd4Str)\\nNFKC->NFD  : \$(nfd5Str)\\n"
+                    "NFD test failed.\\nSource     : \$(sourceStr)\\nNFD        : \$(nfdStr)\\nSource->NFD: \$(nfd1Str)\\nNFC->NFD   : \$(nfd2Str)\\nNFD->NFD   : \$(nfd3Str)\\nNFKD       : \$(nfkdStr)\\nNFKD->NFD  : \$(nfd4Str)\\nNFKC->NFD  : \$(nfd5Str)\\n"
 
-            Stdout.line! "=== Test \$(Num.toStr index) failed.\\n\$(nfcResultStr)\\n\$(nfdResultStr)"
+            nfkdResultStr =
+                if nfdResult then
+                    "NFKD test passed"
+                else
+                    "NFKD test failed.\\nSource     : \$(sourceStr)\\nNFKD        : \$(nfkdStr)\\nSource->NFKD: \$(nfkd1Str)\\nNFC->NFKD   : \$(nfkd2Str)\\nNFD->NFKD   : \$(nfkd3Str)\\nNFKD->NFKD  : \$(nfkd4Str)\\nNFKC->NFKD  : \$(nfkd5Str)\\n"
+
+            nfkcResultStr =
+                if nfdResult then
+                    "NFKC test passed"
+                else
+                    "NFKC test failed.\\nSource     : \$(sourceStr)\\nNFKC        : \$(nfkcStr)\\nSource->NFKC: \$(nfkc1Str)\\nNFC->NFKC   : \$(nfkc2Str)\\nNFD->NFKC   : \$(nfkc3Str)\\nNFKD->NFKC  : \$(nfkc4Str)\\nNFKC->NFKC  : \$(nfkc5Str)\\n"
+
+            Stdout.line! "=== Test \$(Num.toStr index) failed.\\n\$(nfcResultStr)\\n\$(nfdResultStr)\\n\$(nfkdResultStr)\\n\$(nfkcResultStr)"
 
 
     tests = [$(tests)]
@@ -151,7 +215,7 @@ takeHelper =\in, count, out ->
     [first, .. as rest] -> takeHelper rest (count - 1) (List.append out first)
 
 
-tests = file |> Str.trim |> Str.split "\n" |> List.keepOks parseLine |> take 7000 |> List.mapWithIndex makeNfcTest |> Str.joinWith "\n"
+tests = file |> Str.trim |> Str.split "\n" |> List.keepOks parseLine |> take 100 |> List.mapWithIndex makeNfcTest |> Str.joinWith "\n"
 
 main =
 

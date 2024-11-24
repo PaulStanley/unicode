@@ -1,8 +1,10 @@
 module [
     showCodePoints,
-    toNFC,
-    toNFD,
-    toNFKD,
+    codePointsToNFC,
+    codePointsToNFD,
+    codePointsToNFKD,
+    codePointsToNFKC,
+    NormalizationForm,
 ]
 
 import CodePoint exposing [CodePoint]
@@ -11,6 +13,8 @@ import InternalComposition
 import Helpers
 
 CombiningClass : U8
+
+NormalizationForm: [NFD, NFC, NFKD, NFKC]
 
 cClass = InternalComposition.combiningClassInternal
 
@@ -147,7 +151,7 @@ hangulLBase = 0x1100
 hangulVBase = 0x1161
 hangulTBase = 0x11a7
 hangulJamoEnd = 0x11ff
-hangulBlockEnd = 0xd7a3
+# hangulBlockEnd = 0xd7a3
 hangulTCount = 28
 hangulNCount = 588
 hangulSEnd = 0xd7af
@@ -214,44 +218,58 @@ isNormalHelp = \cps, lastCc, status, checker ->
                     No -> No
                     Maybe -> isNormalHelp rest cc Maybe checker
 
-decomposeCanonical : CodePoint -> List CodePoint
-decomposeCanonical = \cp ->
+decomposeOneCanonical : CodePoint -> List CodePoint
+decomposeOneCanonical = \cp ->
     if isHangulSyllable cp then
         hangulDecompose cp
     else
         when InternalComposition.canonicalDecompositionInternal cp is
             Ok decomp ->
-                List.map decomp (decomposeCanonical) |> List.join
+                List.map decomp (decomposeOneCanonical) |> List.join
 
             Err NoDecomp -> [cp]
 
-decomposeCanonicals : List CodePoint -> List CodePoint
-decomposeCanonicals = \cps ->
+decomposeCanonical : List CodePoint -> List CodePoint
+decomposeCanonical = \cps ->
     cps
-    |> List.map decomposeCanonical
+    |> List.map decomposeOneCanonical
     |> List.join
 
-decomposeCompatible : CodePoint -> List CodePoint
-decomposeCompatible = \cp ->
+decomposeOneCompatible : CodePoint -> List CodePoint
+decomposeOneCompatible = \cp ->
     if isHangulSyllable cp then
         hangulDecompose cp
     else
         when InternalComposition.canonicalDecompositionInternal cp is
             Ok decomp1 ->
-                List.map decomp1 (decomposeCompatible) |> List.join
+                List.map decomp1 (decomposeOneCompatible) |> List.join
 
             Err NoDecomp ->
                 when InternalComposition.compatibleDecompositionInternal cp is
                     Ok decomp2 ->
-                        List.map decomp2 (decomposeCompatible) |> List.join
+                        List.map decomp2 (decomposeOneCompatible) |> List.join
 
                     Err NoDecomp -> [cp]
 
-decomposeCompatibles : List CodePoint -> List CodePoint
-decomposeCompatibles = \cps ->
+decomposeCompatible : List CodePoint -> List CodePoint
+decomposeCompatible = \cps ->
     cps
-    |> List.map decomposeCompatible
+    |> List.map decomposeOneCompatible
     |> List.join
+
+hangulDecompose : CodePoint -> List CodePoint
+hangulDecompose = \cp ->
+    sIndex = (CodePoint.toU32 cp) - hangulSBase
+    lIndex = sIndex // hangulNCount
+    vIndex = (sIndex % hangulNCount) // hangulTCount
+    tIndex = sIndex % hangulTCount
+
+    when (lIndex, vIndex, tIndex) is
+        (_l, _v, t) if t == 0 ->
+            [hangulLBase + lIndex, hangulVBase + vIndex] |> List.keepOks CodePoint.fromU32
+
+        (_l, _v, _t) ->
+            [hangulLBase + lIndex, hangulVBase + vIndex, hangulTBase + tIndex] |> List.keepOks CodePoint.fromU32
 
 sortCanonical : List CodePoint -> List CodePoint
 sortCanonical = \cps ->
@@ -273,10 +291,6 @@ sortCanonicalHelp = \cps, working, acc ->
 sortAndJoin : List CodePoint, List CodePoint -> List CodePoint
 sortAndJoin = \cps, acc ->
     List.concat acc (List.sortWith cps \a, b -> Num.compare (cClass a) (cClass b))
-
-normalizeNFD : List CodePoint -> List CodePoint
-normalizeNFD = \cps ->
-    List.map cps decomposeCanonical |> List.join |> sortCanonical
 
 composeCanonical : List CodePoint -> List CodePoint
 composeCanonical = \cps ->
@@ -351,98 +365,66 @@ shouldComposeCanonical = \{ starter, combiner } ->
             else
                 Ok sub
 
-strToNfc : Str -> Result Str [Utf8ParseError, BadUtf8]
-strToNfc = \str ->
+codePointsToNFC : List CodePoint -> List CodePoint
+codePointsToNFC = \cps ->
+    when isNormal quickCheckNFC cps is
+        Yes -> cps
+        _ ->
+            cps
+            |> decomposeCanonical
+            |> sortCanonical
+            |> composeCanonical
+
+codePointsToNFD : List CodePoint -> List CodePoint
+codePointsToNFD = \cps ->
+    when isNormal quickCheckNFD cps is
+        Yes -> cps
+        _ ->
+            cps
+            |> decomposeCanonical
+            |> sortCanonical
+
+codePointsToNFKD : List CodePoint -> List CodePoint
+codePointsToNFKD = \cps ->
+    when isNormal quickCheckNFKD cps is
+        Yes -> cps
+        _ ->
+            cps
+            |> decomposeCompatible
+            |> sortCanonical
+
+codePointsToNFKC : List CodePoint -> List CodePoint
+codePointsToNFKC = \cps ->
+    when isNormal quickCheckNFKC cps is
+        Yes -> cps
+        _ ->
+            cps
+            |> decomposeCompatible
+            |> sortCanonical
+            |> composeCanonical
+
+normalize : NormalizationForm, Str -> Str
+normalize = \form, str ->
+    normalizer =
+        when form is
+            NFD -> codePointsToNFD
+            NFC -> codePointsToNFC
+            NFKD -> codePointsToNFKD
+            NFKC -> codePointsToNFKC
     when str |> Str.toUtf8 |> CodePoint.parseUtf8 is
-        Ok cps -> toNFD cps |> CodePoint.toStr
-        Err _ -> Err Utf8ParseError
+        Err _ -> crash "String did not parse to valid unicode."
+
+        Ok cps ->
+            when normalizer cps |> CodePoint.toStr is
+            Err _ -> crash "Failed to normalize string. This is definitely a bug in Normalization.roc in the unicode package."
+
+            Ok normalized -> normalized
 
 expect
     str = "Café society"
-    res = strToNfc str |> Result.withDefault ""
+    res = normalize NFD str
     dbg Str.toUtf8 str
 
     dbg Str.toUtf8 res
 
     str == res
-
-toNFC : List CodePoint -> List CodePoint
-toNFC = \cps ->
-    when isNormal quickCheckNFC cps is
-        Yes -> cps
-        _ ->
-            cps
-            |> decomposeCanonicals
-            |> sortCanonical
-            |> composeCanonical
-
-toNFD : List CodePoint -> List CodePoint
-toNFD = \cps ->
-    when isNormal quickCheckNFD cps is
-        Yes -> cps
-        _ ->
-            cps
-            |> decomposeCanonicals
-            |> sortCanonical
-
-toNFKD : List CodePoint -> List CodePoint
-toNFKD = \cps ->
-    when isNormal quickCheckNFKD cps is
-        Yes -> cps
-        _ ->
-            cps
-            |> decomposeCompatibles
-            |> sortCanonical
-
-toNFKC : List CodePoint -> List CodePoint
-toNFKC = \cps ->
-    when isNormal quickCheckNFKC cps is
-        Yes -> cps
-        _ ->
-            cps
-            |> decomposeCompatibles
-            |> sortCanonical
-            |> composeCanonical
-
-hangulDecompose : CodePoint -> List CodePoint
-hangulDecompose = \cp ->
-    sIndex = (CodePoint.toU32 cp) - hangulSBase
-    lIndex = sIndex // hangulNCount
-    vIndex = (sIndex % hangulNCount) // hangulTCount
-    tIndex = sIndex % hangulTCount
-
-    when (lIndex, vIndex, tIndex) is
-        (_, _, t) if t == 0 ->
-            dbg "LV"
-
-            [hangulLBase + lIndex, hangulVBase + vIndex] |> List.keepOks CodePoint.fromU32
-
-        (_l, _v, _t) ->
-            dbg "LVT"
-
-            [hangulLBase + lIndex, hangulVBase + vIndex, hangulTBase + tIndex] |> List.keepOks CodePoint.fromU32
-
-expect
-    source = makeTest [0x3304, 0x0334]
-    nfkd = toNFKD source
-    dbg showCodePoints source
-
-    dbg showCodePoints nfkd
-
-    Bool.false
-
-expect
-    source = makeTest [0x30a4, 0x30cb, 0x30f3, 0x30b0, 0x0334]
-    nfd = toNFD source
-    nfc = toNFC nfd
-    dbg isStarter (CodePoint.fromU32Unsafe 0x30b0)
-
-    dbg cClass (CodePoint.fromU32Unsafe 0x30b0)
-
-    dbg showCodePoints source
-
-    dbg showCodePoints nfd
-
-    dbg showCodePoints nfc
-
-    Bool.false
