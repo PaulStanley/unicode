@@ -4,7 +4,7 @@ import pf.File
 import pf.Arg
 import "data/NormalizationTest.txt" as file : Str
 import Helpers
-#import pf.Stdout
+
 
 template =
     """
@@ -15,8 +15,7 @@ template =
     import CodePoint exposing [CodePoint]
     import pf.Stdout
     import pf.Utc
-    import Normalization
-    import Helpers
+    import InternalNormalization
 
     convertedU32 : U32 -> CodePoint
     convertedU32 = \\cp ->
@@ -45,30 +44,31 @@ template =
         source = converted sourceR
 
         start = Utc.now! {}
-        nfc1 = Normalization.codePointsToNFC source
-        nfc2 = Normalization.codePointsToNFC nfc
-        nfc3 = Normalization.codePointsToNFC nfd
-        nfc4 = Normalization.codePointsToNFC nfkd
-        nfc5 = Normalization.codePointsToNFC nfkc
+        nfc1 = InternalNormalization.codePointsToNFC source
+        nfc2 = InternalNormalization.codePointsToNFC nfc
+        nfc3 = InternalNormalization.codePointsToNFC nfd
+        nfc4 = InternalNormalization.codePointsToNFC nfkd
+        nfc5 = InternalNormalization.codePointsToNFC nfkc
 
-        nfd1 = Normalization.codePointsToNFD source
-        nfd2 = Normalization.codePointsToNFD nfc
-        nfd3 = Normalization.codePointsToNFD nfd
-        nfd4 = Normalization.codePointsToNFD nfkd
-        nfd5 = Normalization.codePointsToNFD nfkc
+        nfd1 = InternalNormalization.codePointsToNFD source
+        nfd2 = InternalNormalization.codePointsToNFD nfc
+        nfd3 = InternalNormalization.codePointsToNFD nfd
+        nfd4 = InternalNormalization.codePointsToNFD nfkd
+        nfd5 = InternalNormalization.codePointsToNFD nfkc
 
-        nfkd1 = Normalization.codePointsToNFKD source
-        nfkd2 = Normalization.codePointsToNFKD nfc
-        nfkd3 = Normalization.codePointsToNFKD nfd
-        nfkd4 = Normalization.codePointsToNFKD nfkd
-        nfkd5 = Normalization.codePointsToNFKD nfkc
+        nfkd1 = InternalNormalization.codePointsToNFKD source
+        nfkd2 = InternalNormalization.codePointsToNFKD nfc
+        nfkd3 = InternalNormalization.codePointsToNFKD nfd
+        nfkd4 = InternalNormalization.codePointsToNFKD nfkd
+        nfkd5 = InternalNormalization.codePointsToNFKD nfkc
+
+        nfkc1 = InternalNormalization.codePointsToNFKC source
+        nfkc2 = InternalNormalization.codePointsToNFKC nfc
+        nfkc3 = InternalNormalization.codePointsToNFKC nfd
+        nfkc4 = InternalNormalization.codePointsToNFKC nfkd
+        nfkc5 = InternalNormalization.codePointsToNFKC nfkc
+
         stop = Utc.now! {}
-
-        nfkc1 = Normalization.codePointsToNFKC source
-        nfkc2 = Normalization.codePointsToNFKC nfc
-        nfkc3 = Normalization.codePointsToNFKC nfd
-        nfkc4 = Normalization.codePointsToNFKC nfkd
-        nfkc5 = Normalization.codePointsToNFKC nfkc
 
 
         # NFC
@@ -114,34 +114,34 @@ template =
         if nfcResult && nfdResult && nfkdResult && nfkcResult then
             Stdout.line "Test \$(Num.toStr index) complete in \$(time)"
         else
-            sourceStr = Normalization.showCodePoints source |> Inspect.toStr
-            nfcStr = Normalization.showCodePoints nfc |> Inspect.toStr
-            nfc1Str = Normalization.showCodePoints nfc1 |> Inspect.toStr
-            nfc2Str = Normalization.showCodePoints nfc2 |> Inspect.toStr
-            nfc3Str = Normalization.showCodePoints nfc3 |> Inspect.toStr
-            nfc4Str = Normalization.showCodePoints nfc4 |> Inspect.toStr
-            nfkcStr = Normalization.showCodePoints nfkc |> Inspect.toStr
-            nfc5Str = Normalization.showCodePoints nfc5 |> Inspect.toStr
+            sourceStr = InternalNormalization.showCodePoints source |> Inspect.toStr
+            nfcStr = InternalNormalization.showCodePoints nfc |> Inspect.toStr
+            nfc1Str = InternalNormalization.showCodePoints nfc1 |> Inspect.toStr
+            nfc2Str = InternalNormalization.showCodePoints nfc2 |> Inspect.toStr
+            nfc3Str = InternalNormalization.showCodePoints nfc3 |> Inspect.toStr
+            nfc4Str = InternalNormalization.showCodePoints nfc4 |> Inspect.toStr
+            nfkcStr = InternalNormalization.showCodePoints nfkc |> Inspect.toStr
+            nfc5Str = InternalNormalization.showCodePoints nfc5 |> Inspect.toStr
 
-            nfdStr = Normalization.showCodePoints nfd |> Inspect.toStr
-            nfd1Str = Normalization.showCodePoints nfd1 |> Inspect.toStr
-            nfd2Str = Normalization.showCodePoints nfd2 |> Inspect.toStr
-            nfd3Str = Normalization.showCodePoints nfd3 |> Inspect.toStr
-            nfd4Str = Normalization.showCodePoints nfd4 |> Inspect.toStr
-            nfkdStr = Normalization.showCodePoints nfkd |> Inspect.toStr
-            nfd5Str = Normalization.showCodePoints nfd5 |> Inspect.toStr
+            nfdStr = InternalNormalization.showCodePoints nfd |> Inspect.toStr
+            nfd1Str = InternalNormalization.showCodePoints nfd1 |> Inspect.toStr
+            nfd2Str = InternalNormalization.showCodePoints nfd2 |> Inspect.toStr
+            nfd3Str = InternalNormalization.showCodePoints nfd3 |> Inspect.toStr
+            nfd4Str = InternalNormalization.showCodePoints nfd4 |> Inspect.toStr
+            nfkdStr = InternalNormalization.showCodePoints nfkd |> Inspect.toStr
+            nfd5Str = InternalNormalization.showCodePoints nfd5 |> Inspect.toStr
 
-            nfkd1Str = Normalization.showCodePoints nfkd1 |> Inspect.toStr
-            nfkd2Str = Normalization.showCodePoints nfkd2 |> Inspect.toStr
-            nfkd3Str = Normalization.showCodePoints nfkd3 |> Inspect.toStr
-            nfkd4Str = Normalization.showCodePoints nfkd4 |> Inspect.toStr
-            nfkd5Str = Normalization.showCodePoints nfkd5 |> Inspect.toStr
+            nfkd1Str = InternalNormalization.showCodePoints nfkd1 |> Inspect.toStr
+            nfkd2Str = InternalNormalization.showCodePoints nfkd2 |> Inspect.toStr
+            nfkd3Str = InternalNormalization.showCodePoints nfkd3 |> Inspect.toStr
+            nfkd4Str = InternalNormalization.showCodePoints nfkd4 |> Inspect.toStr
+            nfkd5Str = InternalNormalization.showCodePoints nfkd5 |> Inspect.toStr
 
-            nfkc1Str = Normalization.showCodePoints nfkd1 |> Inspect.toStr
-            nfkc2Str = Normalization.showCodePoints nfkd2 |> Inspect.toStr
-            nfkc3Str = Normalization.showCodePoints nfkd3 |> Inspect.toStr
-            nfkc4Str = Normalization.showCodePoints nfkd4 |> Inspect.toStr
-            nfkc5Str = Normalization.showCodePoints nfkd5 |> Inspect.toStr
+            nfkc1Str = InternalNormalization.showCodePoints nfkd1 |> Inspect.toStr
+            nfkc2Str = InternalNormalization.showCodePoints nfkd2 |> Inspect.toStr
+            nfkc3Str = InternalNormalization.showCodePoints nfkd3 |> Inspect.toStr
+            nfkc4Str = InternalNormalization.showCodePoints nfkd4 |> Inspect.toStr
+            nfkc5Str = InternalNormalization.showCodePoints nfkd5 |> Inspect.toStr
 
             nfcResultStr =
                 if nfcResult then
@@ -215,7 +215,7 @@ takeHelper =\in, count, out ->
     [first, .. as rest] -> takeHelper rest (count - 1) (List.append out first)
 
 
-tests = file |> Str.trim |> Str.split "\n" |> List.keepOks parseLine |> take 100 |> List.mapWithIndex makeNfcTest |> Str.joinWith "\n"
+tests = file |> Str.trim |> Str.split "\n" |> List.keepOks parseLine |> take 1000 |> List.mapWithIndex makeNfcTest |> Str.joinWith "\n"
 
 main =
 

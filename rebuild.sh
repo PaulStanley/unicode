@@ -14,3 +14,9 @@ roc run package/InternalEAWGen.roc -- package/
 
 echo "Generating InternalComposition.roc"
 roc run package/InternalCompositionGen.roc -- package/
+
+echo "Generating InternalDerivedNorm.roc"
+roc run package/InternalDerivedNormGen.roc -- package/
+
+echo "Generating InternalNormalizationTest.roc"
+roc run package/InternalNormalizationTestGen.roc -- package/
