@@ -11,7 +11,7 @@
 ## the "e":
 ##
 ## The other way involves a single codepoint which represents an "e with
-## an acute accent":
+## an acute accent".
 ##
 ## A user searching for the word "café" in some text may provide the
 ## search term in either form, and the person who prepared the text may
@@ -89,7 +89,7 @@
 ##
 ## but the "fi" ligature would not be restored
 ##
-##     <fi>, n, a, l [NKFD]-> f, i, n, a, l [NKFC] -> f, i, n, a, l
+##     <fi>, n, a, l, é [NKFD]-> f, i, n, a, l, e, ´ [NKFC] -> f, i, n, a, l, é
 ##
 ## If you've read this far, you may be asking: well, what form should I use?
 ##
@@ -112,17 +112,13 @@
 ##  about ensuring that particular sequences of glyphs will have a predictable
 ##  representation in terms of codepoints. It does not deal with those aspects
 ##  of text manipulation which are about things like uppercasing or collation.
-
 module [
     NormalizationForm,
     normalize,
-    normalizeChecked
 ]
 
 import InternalNormalization
 import CodePoint
-
-
 
 ## Normalization form
 ##
@@ -148,7 +144,7 @@ import CodePoint
 ## * NFKD: Normalization Form KD ("Compatibly Decomposed"). The string is
 ##   _compatibly_ decomposed, which means that quite extensive changes may be made
 ##  to represent the essential _semantic_ function of the characters.
-NormalizationForm: [NFC, NFD, NFKC, NFKD]
+NormalizationForm : [NFC, NFD, NFKC, NFKD]
 
 # Consistently with the suggestion in grapheme, and with discussion on Zulip
 # https://roc.zulipchat.com/#narrow/channel/231634-beginners/topic/Questions.20about.20API.20design
@@ -174,33 +170,13 @@ normalize = \form, str ->
             NFKD -> InternalNormalization.codePointsToNFKD
             NFKC -> InternalNormalization.codePointsToNFKC
     when str |> Str.toUtf8 |> CodePoint.parseUtf8 is
-        Err _ -> crash "String did not parse to valid unicode."
-
+        Err _ -> crash "String did not parse to valid unicode. This should never happen."
         Ok cps ->
             when normalizer cps |> CodePoint.toStr is
-            Err _ -> crash "Failed to normalize string. This is definitely a bug in Normalization.roc in the unicode package."
+                Err _ -> crash "Failed to normalize string. This is definitely a bug in Normalization.roc in the unicode package."
+                Ok normalized -> normalized
 
-            Ok normalized -> normalized
-
-## Put a string into normalized form. The form is specified as one of NFC, NFD,
-## NFKC, or NKFD. If parsing to unicode fails, return error.``
-normalizeChecked : NormalizationForm, Str -> Result Str [InvalidUtf8, BadUtf8, CodepointTooLarge, EncodesSurrogateHalf, ExpectedContinuation, ListWasEmpty, OverlongEncoding]
-normalizeChecked = \form, str ->
-    normalizer =
-        when form is
-            NFD -> InternalNormalization.codePointsToNFD
-            NFC -> InternalNormalization.codePointsToNFC
-            NFKD -> InternalNormalization.codePointsToNFKD
-            NFKC -> InternalNormalization.codePointsToNFKC
-    when str |> Str.toUtf8 |> CodePoint.parseUtf8 is
-        Err err -> Err err
-
-        Ok cps -> normalizer cps |> CodePoint.toStr
 expect
     str = "Café society"
     res = normalize NFD str
-    dbg Str.toUtf8 str
-
-    dbg Str.toUtf8 res
-
-    str == res
+    str != res

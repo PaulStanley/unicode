@@ -7,6 +7,7 @@ module [
 ]
 
 import CodePoint exposing [CodePoint]
+import InternalCP exposing [fromU32Unchecked]
 import InternalDerivedNorm exposing [quickCheckNFC, quickCheckNFD, quickCheckNFKD, quickCheckNFKC]
 import InternalComposition
 import Helpers
@@ -17,7 +18,7 @@ cClass = InternalComposition.combiningClassInternal
 
 # This is used for testing only
 # makeTest : List U32 -> List CodePoint
-# makeTest = \u32s -> List.map u32s CodePoint.fromU32Unsafe
+# makeTest = \u32s -> List.map u32s fromU32Unchecked
 
 # This is used for testing only
 showCodePoints : List CodePoint -> List _
@@ -68,7 +69,7 @@ isHangulLV = \u32 ->
         Bool.false
 
 expect
-    result = isHangulStarter (CodePoint.fromU32Unsafe 0x1111)
+    result = isHangulStarter (fromU32Unchecked 0x1111)
     result == Bool.true
 
 # A codepoint which might have composable characters after it: combining class 0
@@ -223,14 +224,14 @@ cComposition = \{ starter, combiner } ->
                 l = starter32 - hangulLBase
                 v = combiner32 - hangulVBase
                 r = hangulSBase + (l * hangulNCount) + (v * hangulTCount)
-                Ok (CodePoint.fromU32Unsafe r)
+                Ok (fromU32Unchecked r)
             # And this then deals with LVT combinations
         else if combiner32 <= hangulTBase || combiner32 > 0x11c3 then
             Err JamoNoComp
             else
 
         r = starter32 + combiner32 - hangulTBase
-        Ok (CodePoint.fromU32Unsafe r)
+        Ok (fromU32Unchecked r)
 
 starterPlusCombiners : List CodePoint, CodePoint, List CodePoint -> List CodePoint
 starterPlusCombiners = \done, starter, combiners ->
