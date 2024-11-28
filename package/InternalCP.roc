@@ -2,6 +2,7 @@ module [
     CP,
     fromU32Unchecked,
     toU32,
+    splitBytes,
 ]
 
 CP := U32 implements [Eq, Hash, Inspect { toInspector: codePointInspector }]
@@ -12,6 +13,13 @@ toU32 = \@CP u32 -> u32
 fromU32Unchecked : U32 -> CP
 fromU32Unchecked = @CP
 
+splitBytes : CP -> { high : U8, middle : U8, low : U8 }
+splitBytes = \@CP u32 ->
+    high = Num.shiftRightZfBy u32 16 |> Num.toU8
+    middle = Num.bitwiseAnd u32 0x00ffff |> Num.shiftRightZfBy 8 |> Num.toU8
+    low = Num.bitwiseAnd u32 0x0000ff |> Num.toU8
+    { high, middle, low }
+
 codePointInspector : CP -> Inspector f where f implements InspectFormatter
 codePointInspector = \@CP cp ->
     hex = hexStrFromU32 cp
@@ -20,23 +28,23 @@ codePointInspector = \@CP cp ->
 decToHex : U8 -> U8
 decToHex = \dec ->
     when dec is
-    0 -> '0'
-    1 -> '1'
-    2 -> '2'
-    3 -> '3'
-    4 -> '4'
-    5 -> '5'
-    6 -> '6'
-    7 -> '7'
-    8 -> '8'
-    9 -> '9'
-    10 -> 'A'
-    11 -> 'B'
-    12 -> 'C'
-    13 -> 'D'
-    14 -> 'E'
-    15 -> 'F'
-    _ -> crash "decToHex: too big!"
+        0 -> '0'
+        1 -> '1'
+        2 -> '2'
+        3 -> '3'
+        4 -> '4'
+        5 -> '5'
+        6 -> '6'
+        7 -> '7'
+        8 -> '8'
+        9 -> '9'
+        10 -> 'A'
+        11 -> 'B'
+        12 -> 'C'
+        13 -> 'D'
+        14 -> 'E'
+        15 -> 'F'
+        _ -> crash "decToHex: too big!"
 
 hexStrFromU32 : U32 -> Str
 hexStrFromU32 = \u32 ->

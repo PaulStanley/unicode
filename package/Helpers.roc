@@ -15,8 +15,11 @@ module [
     hexStrFromU32,
 ]
 
+import InternalCP
+
 CPMeta : [Single U32, Range U32 U32]
 PropertyMap a : { cp : CPMeta, prop : a }
+TrieDict a : Dict U8 (Dict U8 (Dict U8 a))
 
 filterPropertyMap : List (PropertyMap a), (PropertyMap a -> Result CPMeta [NotNeeded]) -> List CPMeta
 filterPropertyMap = \map, filter -> List.keepOks map filter
@@ -180,23 +183,23 @@ metaToExpression = \cp ->
 decToHex : U8 -> U8
 decToHex = \dec ->
     when dec is
-    0 -> '0'
-    1 -> '1'
-    2 -> '2'
-    3 -> '3'
-    4 -> '4'
-    5 -> '5'
-    6 -> '6'
-    7 -> '7'
-    8 -> '8'
-    9 -> '9'
-    10 -> 'A'
-    11 -> 'B'
-    12 -> 'C'
-    13 -> 'D'
-    14 -> 'E'
-    15 -> 'F'
-    _ -> crash "decToHex: too big!"
+        0 -> '0'
+        1 -> '1'
+        2 -> '2'
+        3 -> '3'
+        4 -> '4'
+        5 -> '5'
+        6 -> '6'
+        7 -> '7'
+        8 -> '8'
+        9 -> '9'
+        10 -> 'A'
+        11 -> 'B'
+        12 -> 'C'
+        13 -> 'D'
+        14 -> 'E'
+        15 -> 'F'
+        _ -> crash "decToHex: too big!"
 
 hexStrFromU32 : U32 -> Str
 hexStrFromU32 = \u32 ->
@@ -220,3 +223,36 @@ asHexHelper = \dec, hex ->
         here = dec % 16 |> Num.toU8 |> decToHex
         next = dec // 16
         asHexHelper next (List.prepend hex here)
+
+toTrie : List (U32, a) -> TrieDict a
+toTrie = \keys ->
+    List.walk keys (Dict.empty {}) \s, (k, v) -> toTrieHelp k v s
+
+expect
+    a = [(0x000061, "a"), (0x000041, "A")]
+    b = toTrie a
+    dbg b
+
+    Bool.false
+
+splitBytes : U32 -> { high : U8, middle : U8, low : U8 }
+splitBytes = \u32 ->
+    InternalCP.fromU32Unchecked u32 |> InternalCP.splitBytes
+
+toTrieHelp : U32, a, TrieDict a -> TrieDict a
+toTrieHelp = \key, value, trie ->
+    { high, middle, low } = splitBytes key
+    when Dict.get trie high is
+        Err KeyNotFound ->
+            lowDict = Dict.empty {} |> Dict.insert low value
+            middleDict = Dict.empty {} |> Dict.insert middle lowDict
+            Dict.insert trie high middleDict
+
+        Ok middleDict ->
+            when Dict.get middleDict middle is
+                Err KeyNotFound ->
+                    lowDict = Dict.empty {} |> Dict.insert low value
+                    Dict.insert trie high (Dict.insert middleDict middle lowDict)
+
+                Ok lowDict ->
+                    Dict.insert trie high (Dict.insert middleDict middle (Dict.insert lowDict low value))
