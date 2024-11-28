@@ -32,7 +32,7 @@ DecompRecord : { codepoint : U32, ccc : U8, decomposition : DecompMapping }
 
 decompositionMapping : Str -> DecompMapping
 decompositionMapping = \str ->
-    split = Str.split str " "
+    split = Str.splitOn str " "
     when split is
         [""] -> None
         [hd, .. as tl] if Str.startsWith hd "<" ->
@@ -43,7 +43,7 @@ decompositionMapping = \str ->
 
 parseLine : Str -> Result DecompRecord [ParseFailure]
 parseLine = \line ->
-    when Str.split line ";" is
+    when Str.splitOn line ";" is
         [cp, _, _, cc, _, decomp, ..] ->
             decomposition = decompositionMapping decomp
             Ok {
@@ -179,7 +179,7 @@ makeCompatibilityDecompositions = \data ->
 parsedData =
     file
     |> Str.trim
-    |> Str.split "\n"
+    |> Str.splitOn "\n"
     |> List.keepOks parseLine
 
 combiningClass =

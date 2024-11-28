@@ -75,7 +75,7 @@ expect parseLine "0020           ; Na # Zs         SPACE" == Ok ("Na", "0x0020",
 expect parseLine "0025..0027     ; Na # Po     [3] PERCENT SIGN..APOSTROPHE" == Ok ("Na", "0x0025", "0x0027")
 
 parsedLines : List (Result EawRange _)
-parsedLines = file |> Str.split "\n" |> List.map parseLine
+parsedLines = file |> Str.splitOn "\n" |> List.map parseLine
 
 originalRanges =
     parsedLines

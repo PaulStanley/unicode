@@ -13,11 +13,11 @@ import Helpers
 propertyMapFromFile : Str, (List Str -> Result (Str, Str) [ParsingError]) -> List { cp : Helpers.CPMeta, prop : (Str, Str) }
 propertyMapFromFile = \file, parsePropPart ->
     file
-    |> Str.split "\n"
+    |> Str.splitOn "\n"
     |> List.keepOks Helpers.startsWithHex
     |> List.map \l ->
 
-        when Str.split l ";" is
+        when Str.splitOn l ";" is
             [hexPart, .. as propPart] ->
                 when (Helpers.parseHexPart hexPart, parsePropPart propPart) is
                     (Ok cp, Ok prop) -> { cp, prop }

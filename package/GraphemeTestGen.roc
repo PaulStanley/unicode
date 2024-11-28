@@ -106,7 +106,7 @@ toU32List = \tokens ->
 testFile : List { lineNo : U16, lineStr : Str, parsed : TestTokens }
 testFile =
     inputFile
-    |> Str.split "\n"
+    |> Str.splitOn "\n"
     |> List.mapWithIndex \lineStr, idx -> { lineNo: Num.toU16 (idx + 1), lineStr, parsed: [] }
     |> List.keepIf \test -> Str.startsWith test.lineStr "÷ "
     |> List.map \test ->

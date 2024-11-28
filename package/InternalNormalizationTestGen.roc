@@ -193,13 +193,13 @@ parseLine = \str ->
     when Helpers.startsWithHex str is
       Err _ -> Err Comment
       Ok s ->
-        when Str.split s ";" is
+        when Str.splitOn s ";" is
             [sourceStr, nfcStr, nfdStr, nfkcStr, nfkdStr, ..] ->
-                source = Str.split sourceStr " " |> List.map Helpers.hexStrToU32
-                nfc = Str.split nfcStr " " |> List.map Helpers.hexStrToU32
-                nfd = Str.split nfdStr " " |> List.map Helpers.hexStrToU32
-                nfkc = Str.split nfkcStr " " |> List.map Helpers.hexStrToU32
-                nfkd = Str.split nfkdStr " " |> List.map Helpers.hexStrToU32
+                source = Str.splitOn sourceStr " " |> List.map Helpers.hexStrToU32
+                nfc = Str.splitOn nfcStr " " |> List.map Helpers.hexStrToU32
+                nfd = Str.splitOn nfdStr " " |> List.map Helpers.hexStrToU32
+                nfkc = Str.splitOn nfkcStr " " |> List.map Helpers.hexStrToU32
+                nfkd = Str.splitOn nfkdStr " " |> List.map Helpers.hexStrToU32
                 Ok {source, nfc, nfd, nfkd, nfkc}
             _ -> Err Comment
 
@@ -215,7 +215,7 @@ takeHelper =\in, count, out ->
     [first, .. as rest] -> takeHelper rest (count - 1) (List.append out first)
 
 
-tests = file |> Str.trim |> Str.split "\n" |> List.keepOks parseLine |> take 1000 |> List.mapWithIndex makeNfcTest |> Str.joinWith "\n"
+tests = file |> Str.trim |> Str.splitOn "\n" |> List.keepOks parseLine |> take 1000 |> List.mapWithIndex makeNfcTest |> Str.joinWith "\n"
 
 main =
 

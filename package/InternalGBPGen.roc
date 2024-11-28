@@ -143,7 +143,7 @@ testsTemplate =
 
 parsePropPart : Str -> Result GBPProp [ParsingError]
 parsePropPart = \str ->
-    when Str.split str "#" is
+    when Str.splitOn str "#" is
         [propStr, ..] -> gbpPropParser (Str.trim propStr)
         _ -> Err ParsingError
 
