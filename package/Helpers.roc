@@ -230,8 +230,7 @@ toTrie = \keys ->
 
 expect
     a = [(0x000061, "a"), (0x000041, "A")]
-    b = toTrie a
-    dbg b
+    b = toTrie a |> trieToSwitch 4
 
     Bool.false
 
@@ -256,3 +255,20 @@ toTrieHelp = \key, value, trie ->
 
                 Ok lowDict ->
                     Dict.insert trie high (Dict.insert middleDict middle (Dict.insert lowDict low value))
+
+trieToSwitch : TrieDict a, U64 -> Str where a implements Inspect
+trieToSwitch = \trie, indent ->
+    switches =
+        Dict.walk trie ["when highByte is"] (\s, k, v ->
+            middle =
+                Dict.walk v ["        when middleByte is"] (\ss, kk, vv ->
+                    low =
+                        Dict.walk vv ["              when lowByte is"] (\sss, kkk, vvv ->
+                            List.append sss "                   $(Num.toStr kkk) -> $(Inspect.toStr vvv)")
+                            |> Str.joinWith "\n"
+                    List.append ss "            $(Num.toStr kk)->\n $(low)")
+                |> Str.joinWith "\n"
+            List.append s "    $(Num.toStr k) -> \n$(middle)")
+        |> Str.joinWith "\n"
+    indentation = List.repeat ' ' indent |> Str.fromUtf8 |> Result.withDefault ""
+    switches |> Str.splitOn "\n" |> List.map (\x -> Str.concat indentation x) |> Str.joinWith "\n"
