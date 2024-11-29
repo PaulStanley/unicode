@@ -13,6 +13,9 @@ module [
     metaToExpression,
     parseHexPart,
     hexStrFromU32,
+    toTrie,
+    TrieDict,
+    trieToSwitch,
 ]
 
 import InternalCP
@@ -228,11 +231,6 @@ toTrie : List (U32, a) -> TrieDict a
 toTrie = \keys ->
     List.walk keys (Dict.empty {}) \s, (k, v) -> toTrieHelp k v s
 
-expect
-    a = [(0x000061, "a"), (0x000041, "A")]
-    b = toTrie a |> trieToSwitch 4
-
-    Bool.false
 
 splitBytes : U32 -> { high : U8, middle : U8, low : U8 }
 splitBytes = \u32 ->
@@ -256,19 +254,22 @@ toTrieHelp = \key, value, trie ->
                 Ok lowDict ->
                     Dict.insert trie high (Dict.insert middleDict middle (Dict.insert lowDict low value))
 
-trieToSwitch : TrieDict a, U64 -> Str where a implements Inspect
-trieToSwitch = \trie, indent ->
+trieToSwitch : TrieDict Str, U64, Str -> Str
+trieToSwitch = \trie, indent, default ->
     switches =
         Dict.walk trie ["when highByte is"] (\s, k, v ->
             middle =
                 Dict.walk v ["        when middleByte is"] (\ss, kk, vv ->
                     low =
                         Dict.walk vv ["              when lowByte is"] (\sss, kkk, vvv ->
-                            List.append sss "                   $(Num.toStr kkk) -> $(Inspect.toStr vvv)")
+                            List.append sss "                   $(Num.toStr kkk) -> Ok $(vvv)")
+                            |> List.append "                   _ -> $(default)"
                             |> Str.joinWith "\n"
                     List.append ss "            $(Num.toStr kk)->\n $(low)")
+                |> List.append "            _ -> $(default)"
                 |> Str.joinWith "\n"
             List.append s "    $(Num.toStr k) -> \n$(middle)")
+        |> List.append "    _ -> $(default)"
         |> Str.joinWith "\n"
     indentation = List.repeat ' ' indent |> Str.fromUtf8 |> Result.withDefault ""
     switches |> Str.splitOn "\n" |> List.map (\x -> Str.concat indentation x) |> Str.joinWith "\n"
