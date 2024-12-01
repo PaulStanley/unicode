@@ -1,3 +1,20 @@
+## Not every language has any idea of case, and even languages that do use the
+## concept do not apply it to every glyph. What is the uppercase of '+'? Or '!'?
+## A few scripts or languages which use case have little quirks. In Greek, the
+## lower-case letter sigma takes two forms: 'ς' at the end of a word, and
+## 'σ' elsewhere. In Turkish, the capital I becomes a dotless 'ı', whereas in
+## most other languages it becomes 'i'. So case is not only script-specific,
+## but sometimes language specific.
+##
+## Things get even more complicated when it comes to so-called "title" case,
+## where (for instance) English usually capitalised the first letter of every
+## word *except* some common prepositions and articles: "Lord of the Rings"
+## not "Lord Of The Rings". German and French would take different approaches.
+##
+## The so-called "basic" unicode case-mapping algorithms do *not* address all
+## of the possible quirks: for instance, its idea of title-case is just one where
+## the first letter of every word is capitalized. But it does address some of them
+## (such as the final sigma and dotless-i points mentioned above).
 module [
     toLower,
     toUpper,
@@ -12,10 +29,16 @@ import InternalCP
 import InternalDerivedProps
 import InternalProps
 
+## Note: this is just a placeholder for a properly developed idea about language
+## tags and Locales. Assume that this WILL CHANGE.
 Locale : [Und, En, Tr, Az, Li]
 
+# Because case mapping often has to look forward and backwards in a string, this
+# provides a type for an iterator, which is manipulated with the various cpIterator
+# functions.
 CodePointIterator : (List CodePoint, U64, U64)
 
+## Temporary convenience function for languages. Assume that this WILL CHANGE.
 makeLocale : Str -> Locale
 makeLocale = \str ->
     when str is
@@ -25,6 +48,9 @@ makeLocale = \str ->
         "Li" -> Li
         _ -> Und
 
+## Convert a string to lowercase, given a particular language. The basic Unicode
+## algorithm only offers "special" cases for Turkish (Tr), Azeri (Az), and
+## Lithuanian (Li). It deals always with greek final sigma.
 toLower : Str, Locale -> Result Str [BadUtf8]
 toLower = \str, language ->
     cps =
@@ -33,6 +59,14 @@ toLower = \str, language ->
             Err _ -> crash "This should not happen!"
     CodePoint.toStr cps
 
+## Convert a string to uppercase, given a particular language. The basic unicode
+## alogrithm only offers "special" cases for Turkish (Tr), Azeri (Az), and
+## Lithuanian (Li). It always makes some (controversial) shifts to iota-subscripted
+## vowels. But it does not--as it arguably should--remove accents from capitals
+## at the start of words, partly because that would require a knowledge of the
+## semantics of the language, and in particular whether two vowels form a dipthong
+## in a particular case, that it doesn't have. For good or ill, we simply aim to
+## to follow the algorithm specified in the Unicode standard.
 toUpper : Str, Locale -> Result Str [BadUtf8]
 toUpper = \str, language ->
     cps =
@@ -40,12 +74,6 @@ toUpper = \str, language ->
             Ok x -> cpsToUpper x language
             Err _ -> crash "This should not happen!"
     CodePoint.toStr cps
-
-expect
-    result = toUpper "Pijamalı hasta, yağız şoföre çabucak güvendi." Tr
-    dbg result
-
-    Bool.false
 
 cpsToLower : List CodePoint, Locale -> List CodePoint
 cpsToLower = \cps, locale ->
@@ -68,6 +96,10 @@ cpsToUpperGeneral :CodePointIterator, (CodePointIterator, List CodePoint -> [Con
 cpsToUpperGeneral = \cpi, prefilter ->
     cpsToGeneralHelp cpi [] prefilter InternalCasemap.mapUpper
 
+# This is the core function. We use the preFilter as a function that will "intervene" to handle
+# special cases. We provide the basic mapping function so that this can be used both for upper
+# and lowercase conversion. Because the prefilter will need to look forwards and backwards
+# in the string, we do not simply consume codepoints, but do so via an iterator.
 cpsToGeneralHelp : CodePointIterator, List CodePoint, (CodePointIterator, List CodePoint -> [Continue, Break (CodePointIterator, List CodePoint), Complete (List CodePoint)]), (CodePoint -> Result (List CodePoint) [NoMapping]) -> List CodePoint
 cpsToGeneralHelp = \cpi, acc, preFilter, checkFn ->
     when preFilter cpi acc is
@@ -88,6 +120,8 @@ cpsToGeneralHelp = \cpi, acc, preFilter, checkFn ->
                 Err OutOfBounds -> newAcc
                 Ok iterator -> cpsToGeneralHelp iterator newAcc preFilter checkFn
 
+# A "null" prefilter. TODO: Convenient because it means we can combine upper and lower-casing
+# in a single function, but might be dispensable if it turns out to be a performance problem.
 prefilterIdentity: CodePointIterator, List CodePoint -> [Continue, Break (CodePointIterator, List CodePoint), Complete (List CodePoint)]
     prefilterIdentity = \_cpi, _cps -> Continue
 
@@ -165,6 +199,7 @@ prefilterLithuanianLower = \cpi, acc ->
     0x012e if isMoreAbove cpi -> buildListAndIterator [0x012f, 0x0307] acc cpi
     _ -> prefilterFinalSigmaLower cpi acc
 
+# This simply pulls out a very common pattern that emerged in many of the prefilters
 buildListAndIterator : List U32, List CodePoint, CodePointIterator -> [Break (CodePointIterator, List CodePoint), Complete (List CodePoint)]
 buildListAndIterator = \lst, acc, cpi ->
         newAcc =
@@ -173,10 +208,13 @@ buildListAndIterator = \lst, acc, cpi ->
             Ok nextIterator -> Break (nextIterator, newAcc)
             Err OutOfBounds -> Complete newAcc
 
+# This function initiates a codepoint iterator, which should then be manipulated
+# and accessed using cpIteratorNext, cpIteratorPrev, and cpIteratorValue
 cpIteratorInit : List CodePoint -> CodePointIterator
 cpIteratorInit = \cps ->
     (cps, 0, List.len cps)
 
+# Move the iterator forward, if possible
 cpIteratorNext : CodePointIterator -> Result CodePointIterator [OutOfBounds]
 cpIteratorNext = \(cps, index, maxIndex) ->
     if index >= maxIndex - 1 then
@@ -184,6 +222,7 @@ cpIteratorNext = \(cps, index, maxIndex) ->
     else
         Ok (cps, index + 1, maxIndex)
 
+# Move the iterator backwards, if possible
 cpIteratorPrev : CodePointIterator -> Result CodePointIterator [OutOfBounds]
 cpIteratorPrev = \(cps, index, maxIndex) ->
     if index <= 0 then
@@ -191,18 +230,24 @@ cpIteratorPrev = \(cps, index, maxIndex) ->
     else
         Ok (cps, index - 1, maxIndex)
 
+# Return the value of the iterator at the "cursor"
 cpIteratorValue : CodePointIterator -> CodePoint
 cpIteratorValue = \(cps, index, _) ->
     when List.get cps index is
         Ok cp -> cp
         Err _ -> crash "This should be impossible"
 
+# A convenience for adding an unknown number of codepoints to a list that is
+# being accumulated. TODO: Would List.join simply be more efficient here?
 buildCodePointList : List CodePoint, List CodePoint -> List CodePoint
 buildCodePointList = \addition, accumulator ->
     when addition is
         [] -> accumulator
         [cp] -> List.append accumulator cp
         [cp, .. as rest] -> buildCodePointList rest (List.append accumulator cp)
+
+# The rest of the module defines various tests which relate a given codepoint to its
+# surroundings.
 
 # defined as follows:
 # There is an uppercase I before C, and there is no intervening combining character class 230
