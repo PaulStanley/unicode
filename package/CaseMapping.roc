@@ -1,5 +1,6 @@
 module [
     toLower,
+    toUpper,
     Locale,
     makeLocale,
 ]
@@ -9,6 +10,7 @@ import InternalCasemap
 import InternalComposition
 import InternalCP
 import InternalDerivedProps
+import InternalProps
 
 Locale : [Und, En, Tr, Az, Li]
 
@@ -31,6 +33,20 @@ toLower = \str, language ->
             Err _ -> crash "This should not happen!"
     CodePoint.toStr cps
 
+toUpper : Str, Locale -> Result Str [BadUtf8]
+toUpper = \str, language ->
+    cps =
+        when Str.toUtf8 str |> CodePoint.parseUtf8 is
+            Ok x -> cpsToUpper x language
+            Err _ -> crash "This should not happen!"
+    CodePoint.toStr cps
+
+expect
+    result = toUpper "Pijamalı hasta, yağız şoföre çabucak güvendi." Tr
+    dbg result
+
+    Bool.false
+
 cpsToLower : List CodePoint, Locale -> List CodePoint
 cpsToLower = \cps, locale ->
     when locale is
@@ -40,21 +56,29 @@ cpsToLower = \cps, locale ->
 
 cpsToLowerGeneral : CodePointIterator, (CodePointIterator, List CodePoint -> [Continue, Break (CodePointIterator, List CodePoint), Complete (List CodePoint)]) -> List CodePoint
 cpsToLowerGeneral = \cpi, prefilter ->
-    cpsToLowerGeneralHelp cpi [] prefilter
+    cpsToGeneralHelp cpi [] prefilter InternalCasemap.mapLower
 
-cpsToLowerGeneralHelp : CodePointIterator, List CodePoint, (CodePointIterator, List CodePoint -> [Continue, Break (CodePointIterator, List CodePoint), Complete (List CodePoint)]) -> List CodePoint
-cpsToLowerGeneralHelp = \cpi, acc, preFilter ->
-    tst = InternalCasemap.mapLower (cpIteratorValue cpi)
-    dbg tst
+cpsToUpper = \cps, locale ->
+    when locale is
+        Li -> cpsToUpperGeneral (cpIteratorInit cps) prefilterLithuanianUpper
+        Tr | Az -> cpsToUpperGeneral (cpIteratorInit cps) prefilterTurkishUpper
+        _ -> cpsToUpperGeneral (cpIteratorInit cps) prefilterIdentity
+
+cpsToUpperGeneral :CodePointIterator, (CodePointIterator, List CodePoint -> [Continue, Break (CodePointIterator, List CodePoint), Complete (List CodePoint)]) -> List CodePoint
+cpsToUpperGeneral = \cpi, prefilter ->
+    cpsToGeneralHelp cpi [] prefilter InternalCasemap.mapUpper
+
+cpsToGeneralHelp : CodePointIterator, List CodePoint, (CodePointIterator, List CodePoint -> [Continue, Break (CodePointIterator, List CodePoint), Complete (List CodePoint)]), (CodePoint -> Result (List CodePoint) [NoMapping]) -> List CodePoint
+cpsToGeneralHelp = \cpi, acc, preFilter, checkFn ->
     when preFilter cpi acc is
         Break (next, nextAcc) ->
-            cpsToLowerGeneralHelp next nextAcc preFilter
+            cpsToGeneralHelp next nextAcc preFilter checkFn
 
         Complete completed -> completed
 
         Continue ->
             newAcc =
-                when cpIteratorValue cpi |> InternalCasemap.mapLower is
+                when cpIteratorValue cpi |> checkFn is
                     Err NoMapping ->
                         List.append acc (cpIteratorValue cpi)
 
@@ -62,14 +86,16 @@ cpsToLowerGeneralHelp = \cpi, acc, preFilter ->
                         buildCodePointList mapping acc
             when cpIteratorNext cpi is
                 Err OutOfBounds -> newAcc
-                Ok iterator -> cpsToLowerGeneralHelp iterator newAcc preFilter
+                Ok iterator -> cpsToGeneralHelp iterator newAcc preFilter checkFn
+
+prefilterIdentity: CodePointIterator, List CodePoint -> [Continue, Break (CodePointIterator, List CodePoint), Complete (List CodePoint)]
+    prefilterIdentity = \_cpi, _cps -> Continue
 
 # This filter deals with sigma in lowercasing: a final sigma must become 'ς', whereas any
 # other sigma must become 'σ'
 prefilterFinalSigmaLower : CodePointIterator, List CodePoint -> [Continue, Break (CodePointIterator, List CodePoint), Complete (List CodePoint)]
 prefilterFinalSigmaLower = \cpi, acc ->
     if (cpIteratorValue cpi |> InternalCP.toU32) == 0x03a3 then
-        dbg "Found sigma"
         newAcc =
             if isFinalSigma cpi then
                 List.append acc (InternalCP.fromU32Unchecked 0x03c2)
@@ -98,6 +124,21 @@ prefilterTurkishLower = \cpi, acc ->
             buildListAndIterator [0x0131] acc cpi
         _ -> prefilterFinalSigmaLower cpi acc
 
+prefilterTurkishUpper : CodePointIterator, List CodePoint -> [Continue, Break (CodePointIterator, List CodePoint), Complete (List CodePoint)]
+prefilterTurkishUpper = \cpi, acc ->
+    when cpIteratorValue cpi |> InternalCP.toU32 is
+        0x0069 -> buildListAndIterator [0x0130] acc cpi
+        _ -> Continue
+
+prefilterLithuanianUpper :CodePointIterator, List CodePoint -> [Continue, Break (CodePointIterator, List CodePoint), Complete (List CodePoint)]
+prefilterLithuanianUpper = \cpi, acc ->
+    when cpIteratorValue cpi |> InternalCP.toU32 is
+        0x0307 if isAfterSoftDotted cpi ->
+            when cpIteratorNext cpi is
+                Ok nextIterator -> Break (nextIterator, acc)
+                Err OutOfBounds -> Complete acc
+        _ -> Continue
+
 # Introduce an explicit dot above when lowercasing capital I's and J's
 # whenever there are more accents above.
 # (of the accents used in Lithuanian: grave, acute, tilde above, and ogonek)
@@ -108,6 +149,11 @@ prefilterTurkishLower = \cpi, acc ->
 # 00CC; 0069 0307 0300; 00CC; 00CC; lt; # LATIN CAPITAL LETTER I WITH GRAVE
 # 00CD; 0069 0307 0301; 00CD; 00CD; lt; # LATIN CAPITAL LETTER I WITH ACUTE
 # 0128; 0069 0307 0303; 0128; 0128; lt; # LATIN CAPITAL LETTER I WITH TILDE
+#
+# TODO: I'm quite unclear whether this is performing as it should! I find
+# the specification for more above very odd, and I can't find any actual examples
+# of what this should be doing. Apparently, it's only supposed to work
+# for dictionaries anyway, so probably not a major deal ...
 prefilterLithuanianLower : CodePointIterator, List CodePoint -> [Continue, Break (CodePointIterator, List CodePoint), Complete (List CodePoint)]
 prefilterLithuanianLower = \cpi, acc ->
     when cpIteratorValue cpi |> InternalCP.toU32 is
@@ -228,3 +274,14 @@ isAfterFinalSigma = \cpi ->
 isFinalSigma : CodePointIterator -> Bool
 isFinalSigma = \cpi ->
     isBeforeFinalSigma cpi && isAfterFinalSigma cpi
+
+isAfterSoftDotted : CodePointIterator -> Bool
+isAfterSoftDotted = \cpi ->
+    when cpIteratorPrev cpi is
+        Err OutOfBounds -> Bool.false
+        Ok prev ->
+            when cpIteratorValue prev is
+                cp if InternalComposition.combiningClassInternal cp == 230 -> Bool.false
+                cp if InternalComposition.combiningClassInternal cp == 0 -> Bool.false
+                cp if InternalProps.isSoftDotted cp -> Bool.true
+                _ -> isAfterSoftDotted prev
