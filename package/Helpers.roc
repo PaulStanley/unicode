@@ -16,6 +16,7 @@ module [
     toTrie,
     TrieDict,
     trieToSwitch,
+    metaToCodePointList
 ]
 
 import InternalCP
@@ -183,6 +184,21 @@ metaToExpression = \cp ->
         Single a -> "(u32 == $(Num.toStr a))"
         Range a b -> "(u32 >= $(Num.toStr a) && u32 <= $(Num.toStr b))"
 
+# convert to a list of tuples suitable for being incorporated
+# into a trie
+metaToCodePointList : CPMeta -> List(U32, Str)
+metaToCodePointList = \cp ->
+    when cp is
+        Single a -> [(a, "Bool.true")]
+        Range a b -> metaRangeHelp a b []
+
+metaRangeHelp : U32, U32, List(U32, Str) -> List (U32, Str)
+metaRangeHelp = \current, max, acc ->
+    if current > max then
+        acc
+    else
+        metaRangeHelp (current + 1) max (List.append acc (current, "Bool.true"))
+
 decToHex : U8 -> U8
 decToHex = \dec ->
     when dec is
@@ -227,6 +243,7 @@ asHexHelper = \dec, hex ->
         next = dec // 16
         asHexHelper next (List.prepend hex here)
 
+
 toTrie : List (U32, a) -> TrieDict a
 toTrie = \keys ->
     List.walk keys (Dict.empty {}) \s, (k, v) -> toTrieHelp k v s
@@ -262,7 +279,7 @@ trieToSwitch = \trie, indent, default ->
                 Dict.walk v ["        when middleByte is"] (\ss, kk, vv ->
                     low =
                         Dict.walk vv ["              when lowByte is"] (\sss, kkk, vvv ->
-                            List.append sss "                   $(Num.toStr kkk) -> Ok $(vvv)")
+                            List.append sss "                   $(Num.toStr kkk) -> $(vvv)")
                             |> List.append "                   _ -> $(default)"
                             |> Str.joinWith "\n"
                     List.append ss "            $(Num.toStr kk)->\n $(low)")

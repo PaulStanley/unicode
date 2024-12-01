@@ -1,5 +1,4 @@
-app [main] { pf: platform "https://github.com/roc-lang/basic-cli/releases/download/0.15.0/SlwdbJ-3GR7uBWQo6zlmYWNYOxnvo8r6YABXD-45UOw.tar.br" }
-
+app [main] { pf: platform "https://github.com/roc-lang/basic-cli/releases/download/0.17.0/lZFLstMUCUvd5bjnnpYromZJXkQUrdhbva4xdBInicE.tar.br" }
 import pf.File
 import pf.Arg
 import "data/DerivedNormalizationProps.txt" as data : Str
@@ -8,7 +7,6 @@ import Helpers
 # We first pick out from the mass of properties in the file those we are
 # really interested in: just the Quick Check tables and the list of
 # codepoints excluded from composition
-
 
 propertyMapFromFile : Str, (List Str -> Result (Str, Str) [ParsingError]) -> List { cp : Helpers.CPMeta, prop : (Str, Str) }
 propertyMapFromFile = \file, parsePropPart ->
@@ -63,7 +61,8 @@ makeCheckFunction = \parsed, label, fname ->
         |> List.map Helpers.metaToExpression
         |> Str.joinWith "||"
 
-    maybes = List.walk relevantEntries [] (\s, i -> collectValued s i "M")
+    maybes =
+        List.walk relevantEntries [] (\s, i -> collectValued s i "M")
         |> List.map Helpers.metaToExpression
         |> Str.joinWith "||"
 
@@ -147,6 +146,6 @@ template =
 
 main =
 
-when Arg.list! {} |> List.get 1 is
-    Err _ -> Task.err (InvalidArguments "USAGE: roc run InternalDerivedNormGen.roc -- path/to/package/")
-    Ok arg -> File.writeUtf8 "$(Helpers.removeTrailingSlash arg)/InternalDerivedNorm.roc" template
+    when Arg.list! {} |> List.get 1 is
+        Err _ -> Task.err (InvalidArguments "USAGE: roc run InternalDerivedNormGen.roc -- path/to/package/")
+        Ok arg -> File.writeUtf8 template "$(Helpers.removeTrailingSlash arg)/InternalDerivedNorm.roc"

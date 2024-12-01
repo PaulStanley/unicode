@@ -1,8 +1,7 @@
 app [main] { pf: platform "https://github.com/roc-lang/basic-cli/releases/download/0.17.0/lZFLstMUCUvd5bjnnpYromZJXkQUrdhbva4xdBInicE.tar.br" }
 
-import pf.Stdout
-#import pf.Arg
-#import pf.File
+import pf.Arg
+import pf.File
 import "data/UnicodeData.txt" as data : Str
 import "data/SpecialCasing.txt" as special : Str
 import Helpers
@@ -25,10 +24,10 @@ parseEntry = \str ->
             |> Str.joinWith ", "
         "[$(contents)]"
 
-ParsedLine : {codepoint: U32, upper: Str, lower: Str, title: Str}
+ParsedLine : { codepoint : U32, upper : Str, lower : Str, title : Str }
 
 # Relevant basic data is found in the last three parts of the line. In most cases
-# there's nothing there'= and we are only interested in the times that there is
+# there's nothing there and we are only interested in the times that there is
 parseLine : Str -> Result ParsedLine [ParseFailure]
 parseLine = \str ->
     when Str.splitOn str ";" is
@@ -39,7 +38,8 @@ parseLine = \str ->
                     upper
                 else
                     titlecase
-            Ok {codepoint: Helpers.hexStrToU32 cp, title: parseEntry title, lower: parseEntry lower, upper: parseEntry upper}
+            Ok { codepoint: Helpers.hexStrToU32 cp, title: parseEntry title, lower: parseEntry lower, upper: parseEntry upper }
+
         _ -> Err ParseFailure
 
 # Organised differently -- we have _lower_, _upper_ and _title_. We also want to avoid
@@ -49,22 +49,23 @@ parseLine = \str ->
 parseSpecialLine : Str -> Result ParsedLine [ParseFailure]
 parseSpecialLine = \str ->
     when Str.splitOn str ";" is
-    [cp, lower, upper, title, comment] if isComment comment ->
-        Ok {codepoint: Helpers.hexStrToU32 cp, title: parseEntry title, lower: parseEntry lower, upper: parseEntry upper}
-    _ -> Err ParseFailure
+        [cp, lower, upper, title, comment] if isComment comment ->
+            Ok { codepoint: Helpers.hexStrToU32 cp, title: parseEntry title, lower: parseEntry lower, upper: parseEntry upper }
+
+        _ -> Err ParseFailure
 
 toDict : Dict U32 Str, ParsedLine, [Upper, Lower, Title] -> Dict U32 Str
 toDict = \dict, line, selector ->
     insertion =
         when selector is
-            Upper -> line.upper
-            Lower -> line.lower
-            Title -> line.title
+            Upper -> "Ok $(line.upper)"
+            Lower -> "Ok $(line.lower)"
+            Title -> "Ok $(line.title)"
     when insertion is
-        "[]" -> dict
+        "Ok []" -> dict
         _ -> Dict.insert dict line.codepoint insertion
 
-basic: List ParsedLine
+basic : List ParsedLine
 basic =
     data
     |> Str.trim
@@ -72,7 +73,7 @@ basic =
     |> List.keepOks Helpers.startsWithHex
     |> List.keepOks parseLine
 
-specials: List ParsedLine
+specials : List ParsedLine
 specials =
     special
     |> Str.trim
@@ -130,8 +131,6 @@ template =
     """
 
 main =
-    #when Arg.list! {} |> List.get 1 is
-    #    Err _ -> Task.err (InvalidArguments "USAGE: roc run InternalCasingGen.roc -- path/to/package/")
-    #    Ok arg -> File.writeUtf8 "$(Helpers.removeTrailingSlash arg)/I.roc" template
-    #
-    Stdout.line "$(template)"
+    when Arg.list! {} |> List.get 1 is
+        Err _ -> Task.err (InvalidArguments "USAGE: roc run InternalCasemapGen.roc -- path/to/package/")
+        Ok arg -> File.writeUtf8 template "$(Helpers.removeTrailingSlash arg)/InternalCasemap.roc"
